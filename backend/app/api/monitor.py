@@ -171,7 +171,7 @@ def _mergeQuoteBar(bars: pd.DataFrame, quote: dict, today: date) -> pd.DataFrame
 def _mergeTodayBar(market: str, symbol: str, bars: pd.DataFrame) -> pd.DataFrame:
     """尽力合并当日进行中K线,任何失败都返回原数据。"""
     try:
-        provider = _buildProvider(market)
+        provider = _buildProvider(market, operation="quotes")
         fetchQuotes = getattr(provider, "fetchQuotes", None)
         if not callable(fetchQuotes):
             return bars
@@ -236,7 +236,7 @@ def quotes(req: QuoteRequest) -> list[QuoteSnapshot]:
     snapshots: list[QuoteSnapshot] = []
     for market, symbols in byMarket.items():
         try:
-            provider = _buildProvider(market)
+            provider = _buildProvider(market, operation="quotes")
             fetchQuotes = getattr(provider, "fetchQuotes", None)
             if not callable(fetchQuotes):
                 raw = {}
@@ -257,7 +257,7 @@ def quotes(req: QuoteRequest) -> list[QuoteSnapshot]:
 @router.get("/minute/{market}/{symbol}", response_model=MinuteResponse)
 def minute(market: str, symbol: str) -> MinuteResponse:
     """当日分时数据(分钟线 + 均价 + 昨收)。"""
-    provider = _buildProvider(market)
+    provider = _buildProvider(market, operation="minute")
     fetchMinute = getattr(provider, "fetchMinute", None)
     if not callable(fetchMinute):
         raise HTTPException(status_code=400, detail=f"{market} 市场暂不支持分时数据")

@@ -133,7 +133,7 @@ def test_quote_identity_uses_response_code_not_response_order(monkeypatch):
     actual=httpx.Client
     def create(**kwargs):
         return actual(transport=httpx.MockTransport(lambda request:httpx.Response(200,content=(second+first).encode('gbk'))))
-    monkeypatch.setattr('app.data.tencent_provider.httpx.Client',create)
+    monkeypatch.setattr('app.data.third_party.httpx.Client',create)
     result=TencentProvider('cn').fetchQuotes(['600519','sh000001'])
     assert result['600519']['price']==1237.48
     assert result['sh000001']['price']==3000
@@ -145,7 +145,7 @@ def test_quote_from_unverified_cache_is_not_merged(monkeypatch):
     class Provider:
         def fetchQuotes(self,symbols):
             return {'600519':{'price':120.,'time':'20260930100000','prevClose':100.}}
-    monkeypatch.setattr(monitor,'_buildProvider',lambda market:Provider())
+    monkeypatch.setattr(monitor,'_buildProvider',lambda market, **kwargs:Provider())
     frame=makeBars([100.],start='2026-09-29')
     result=monitor._mergeTodayBar('cn','600519',frame)
     assert len(result)==1 and result['close'].iloc[-1]==100.
@@ -159,7 +159,7 @@ def test_snapshot_with_mismatched_previous_close_does_not_mix_adjustment_basis(m
     class Provider:
         def fetchQuotes(self,symbols):
             return {'600519':{'price':120.,'time':'20260930100000','prevClose':50.}}
-    monkeypatch.setattr(monitor,'_buildProvider',lambda market:Provider())
+    monkeypatch.setattr(monitor,'_buildProvider',lambda market, **kwargs:Provider())
     frame=describeBars(makeBars([100.],start='2026-09-29'),'cn','600519','day',source='tencent',adjustment='qfq',volumeUnit='lot100')
     assert len(monitor._mergeTodayBar('cn','600519',frame))==1
 
@@ -172,7 +172,7 @@ def test_matching_snapshot_is_visible_but_not_confirmed_until_observed_close(mon
     class Provider:
         def fetchQuotes(self,symbols):
             return {'600519':{'price':120.,'open':110.,'high':121.,'low':109.,'volume':1000.,'time':'20260930100000','prevClose':100.}}
-    monkeypatch.setattr(monitor,'_buildProvider',lambda market:Provider())
+    monkeypatch.setattr(monitor,'_buildProvider',lambda market, **kwargs:Provider())
     frame=describeBars(makeBars([100.],start='2026-09-29'),'cn','600519','day',source='tencent',adjustment='qfq',volumeUnit='lot100')
     result=monitor._mergeTodayBar('cn','600519',frame)
     assert len(result)==2 and result.iloc[-1]['close']==120.

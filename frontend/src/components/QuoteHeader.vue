@@ -30,7 +30,12 @@ const volumeUnit = computed(() =>
 const dataDescription = computed(() => {
   const data = info.value
   if (!data) return 'K线来源、复权与单位未确认，请刷新后核对'
-  const sources: Record<string, string> = { tencent: '腾讯', yahoo: 'Yahoo' }
+  const sources: Record<string, string> = {
+    tencent: '腾讯',
+    yahoo: 'Yahoo',
+    eastmoney: '东方财富',
+    baostock: 'BaoStock',
+  }
   const adjustments: Record<string, string> = {
     none: '不复权',
     qfq: '前复权',

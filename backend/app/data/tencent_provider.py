@@ -5,23 +5,12 @@
 """
 from datetime import datetime
 
-import httpx
 import pandas as pd
 
 from app.data.provider import DataProvider
 from app.data.contract import describeBars
 from app.core.validation import cnFullCode
-
-TENCENT_KLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
-TENCENT_MINUTE_URL = "https://web.ifzq.gtimg.cn/appstock/app/minute/query"
-TENCENT_QUOTE_URL = "https://qt.gtimg.cn/q="
-
-# 单次请求的最大K线根数(腾讯上限约 640)
-MAX_BARS_PER_REQUEST = 640
-
-# 支持的K线周期
-SUPPORTED_PERIODS = ("day", "week", "month")
-
+from app.data import third_party
 
 def _inferCnPrefix(symbol: str) -> str:
     """根据 A 股代码推断交易所前缀。"""
@@ -35,10 +24,11 @@ def _inferCnPrefix(symbol: str) -> str:
 class TencentProvider(DataProvider):
     """腾讯行情实现,market 取 cn(A股)或 hk(港股),前复权。"""
 
-    def __init__(self, market: str) -> None:
+    def __init__(self, market: str, adjustment: str | None = None) -> None:
         if market not in ("cn", "hk"):
-            raise ValueError(f"TencentProvider 仅支持 cn/hk,收到: {market}")
+            raise third_party.DataSourceRequestError(f"TencentProvider 仅支持 cn/hk,收到: {market}")
         self.market = market
+        self.adjustment = adjustment
 
     def _fullCode(self, symbol: str) -> str:
         return f"hk{symbol}" if self.market == "hk" else cnFullCode(symbol)
@@ -46,41 +36,30 @@ class TencentProvider(DataProvider):
     def fetchDailyBars(
         self, symbol: str, startDate: str, endDate: str, period: str = "day"
     ) -> pd.DataFrame:
-        if period not in SUPPORTED_PERIODS:
-            raise ValueError(f"不支持的周期: {period},可选 {SUPPORTED_PERIODS}")
+        settings = third_party.providerSettings("tencent")
+        if period not in settings["periods"]:
+            raise third_party.DataSourceRequestError(f"不支持的周期: {period}")
         code = self._fullCode(symbol)
-        # 周线/月线不传日期区间,按根数回溯(640 周 ≈ 12 年)
-        if period == "day":
-            param = f"{code},day,{startDate},{endDate},{MAX_BARS_PER_REQUEST},qfq"
-        else:
-            param = f"{code},{period},,,{MAX_BARS_PER_REQUEST},qfq"
-        # 遵循运行环境的代理和CA配置
-        with httpx.Client(trust_env=True, timeout=30) as client:
-            resp = client.get(TENCENT_KLINE_URL, params={"param": param})
-            resp.raise_for_status()
-            payload = resp.json()
+        from app.data.contract import instrument
+        kind = instrument(self.market, symbol)["instrumentType"]
+        adjustment = self.adjustment or ("none" if kind == "index" else settings["defaultAdjustment"])
+        if adjustment not in settings["adjustments"] or (kind == "index" and adjustment != "none"):
+            raise third_party.DataSourceRequestError("腾讯不支持该标的复权方式")
+        payload = third_party.tencentHistory(code, startDate, endDate, period, adjustment)
 
         node = payload.get("data", {}).get(code, {})
         # 前复权键为 qfqday/qfqweek/qfqmonth,无复权数据时退化为 day/week/month
-        rows = node.get(f"qfq{period}") or node.get(period) or []
+        adjustedKey = f"{adjustment}{period}" if adjustment != "none" else period
+        rows = node.get(adjustedKey) or node.get(period) or []
         return describeBars(self._normalizeBars(rows), self.market, symbol, period,
-                            source="tencent", adjustment="qfq" if node.get(f"qfq{period}") else "none",
-                            volumeUnit="lot100" if self.market == "cn" else "share")
+                            source="tencent", adjustment=adjustment if node.get(adjustedKey) else "none",
+                            volumeUnit=settings["volumeUnits"][self.market])
 
     @staticmethod
     def _normalizeBars(rows: list) -> pd.DataFrame:
         """字段顺序: [date, open, close, high, low, volume, ...附加信息]"""
-        records = [
-            {
-                "date": row[0],
-                "open": row[1],
-                "close": row[2],
-                "high": row[3],
-                "low": row[4],
-                "volume": row[5],
-            }
-            for row in rows
-        ]
+        mapping = third_party.PROVIDERS["tencent"]["barFields"]
+        records = [{field: row[index] for field, index in mapping.items()} for row in rows]
         df = pd.DataFrame(records)
         if df.empty:
             return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
@@ -96,25 +75,23 @@ class TencentProvider(DataProvider):
         均价 = 累计成交额 / 累计成交量(A股 1 手 = 100 股,港股成交量单位为股)。
         """
         code = self._fullCode(symbol)
-        with httpx.Client(trust_env=True, timeout=15) as client:
-            resp = client.get(TENCENT_MINUTE_URL, params={"code": code})
-            resp.raise_for_status()
-            payload = resp.json()
+        payload = third_party.tencentMinute(code)
 
         node = payload.get("data", {}).get(code, {})
         rawPoints = node.get("data", {}).get("data", [])
         # 昨收:分钟接口的 qt 快照里带昨日收盘价
         prevClose = None
         qt = node.get("qt", {}).get(code, [])
-        if len(qt) > 4:
+        previousCloseIndex = third_party.PROVIDERS["tencent"]["quoteFields"]["prevClose"]
+        if len(qt) > previousCloseIndex:
             try:
-                prevClose = float(qt[4])
+                prevClose = float(qt[previousCloseIndex])
             except (TypeError, ValueError):
                 prevClose = None
 
-        lotSize = 100 if self.market == "cn" else 1
+        lotSize = 100 if third_party.PROVIDERS["tencent"]["volumeUnits"][self.market] == "lot100" else 1
         # 收盘后腾讯会追加横盘尾巴(A股 15:00 后、港股 16:00 后),过滤掉
-        maxTime = "15:00" if self.market == "cn" else "16:00"
+        maxTime = third_party.PROVIDERS["tencent"]["minuteCloseTimes"][self.market]
         return {
             "date": self._minuteTradeDate(node, code),
             "prevClose": prevClose,
@@ -125,8 +102,9 @@ class TencentProvider(DataProvider):
     def _minuteTradeDate(node: dict, code: str) -> str:
         raw = str(node.get("data", {}).get("date", ""))
         qt = node.get("qt", {}).get(code, [])
-        if not raw and len(qt) > 30:
-            raw = str(qt[30])
+        timeIndex = third_party.PROVIDERS["tencent"]["quoteFields"]["time"]
+        if not raw and len(qt) > timeIndex:
+            raw = str(qt[timeIndex])
         for fmt, length in (("%Y%m%d", 8), ("%Y/%m/%d", 10), ("%Y-%m-%d", 10)):
             try:
                 return datetime.strptime(raw[:length], fmt).date().isoformat()
@@ -148,11 +126,12 @@ class TencentProvider(DataProvider):
             parts = line.split()
             if len(parts) < 4:
                 continue
-            hhmm = parts[0]
+            positions = third_party.PROVIDERS["tencent"]["minuteFields"]
+            hhmm = parts[positions["time"]]
             timeStr = f"{hhmm[:2]}:{hhmm[2:]}"
             if timeStr > maxTime:
                 continue
-            price, cumVol, cumAmt = float(parts[1]), float(parts[2]), float(parts[3])
+            price, cumVol, cumAmt = (float(parts[positions[key]]) for key in ("price", "volume", "amount"))
             minuteVolume = cumVol - cumVolume
             cumVolume = cumVol
             cumAmount = cumAmt
@@ -172,10 +151,7 @@ class TencentProvider(DataProvider):
         if not symbols:
             return {}
         codes = [self._fullCode(s) for s in symbols]
-        with httpx.Client(trust_env=True, timeout=10) as client:
-            resp = client.get(f"{TENCENT_QUOTE_URL}{','.join(codes)}")
-            resp.raise_for_status()
-        text = resp.content.decode("gbk", errors="ignore")
+        text = third_party.tencentRequest("quotes", codes=codes)
         result: dict[str, dict] = {}
         requested = dict(zip(codes, symbols))
         for block in text.strip().split(";"):
@@ -183,10 +159,10 @@ class TencentProvider(DataProvider):
                 continue
             fields = block.split("=", 1)[1].strip().strip('"').split("~")
             code = block.split("=", 1)[0].strip().removeprefix("v_")
-            if code not in requested or len(fields) < 4 or fields[2] != code[2:]:
+            if code not in requested or len(fields) < 4 or fields[third_party.PROVIDERS["tencent"]["quoteCodeField"]] != code[2:]:
                 continue
             result[requested[code]] = {**self._parseQuoteFields(fields), "source": "tencent",
-                                      "volumeUnit": "lot100" if self.market == "cn" else "share"}
+                                      "volumeUnit": third_party.PROVIDERS["tencent"]["volumeUnits"][self.market]}
         return result
 
     @staticmethod
@@ -199,25 +175,16 @@ class TencentProvider(DataProvider):
             except (IndexError, TypeError, ValueError):
                 return None
 
-        return {
-            "name": f[1] if len(f) > 1 else "",
-            "price": num(3),
-            "prevClose": num(4),
-            "open": num(5),
-            "volume": num(6),  # 成交量(A股为手)
-            "time": f[30] if len(f) > 30 else "",
-            "change": num(31),
-            "changePct": (num(32) or 0) / 100 if num(32) is not None else None,
-            "high": num(33),
-            "low": num(34),
-            "amount": (num(37) or 0) * 10000 if num(37) is not None else None,  # 万元 → 元
-            "turnoverRate": num(38),
-            "peRatio": num(39),
-            "amplitude": num(43),
-            "circulatingMarketCap": num(44),  # 亿
-            "totalMarketCap": num(45),  # 亿
-            "pbRatio": num(46),
-        }
+        settings = third_party.PROVIDERS["tencent"]
+        result = {}
+        for key, idx in settings["quoteFields"].items():
+            if key in ("name", "time"):
+                result[key] = f[idx] if len(f) > idx else ""
+            else:
+                value = num(idx)
+                result[key] = value * settings["quoteScales"].get(key, 1) if value is not None else None
+        return result
+
 
     def fetchName(self, symbol: str) -> str:
         """取股票名称,失败返回空串。"""

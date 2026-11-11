@@ -26,7 +26,7 @@ def _barPath(market: str, symbol: str, period: str = "day", dataDir: Path | None
 
 
 def saveBars(df: pd.DataFrame, market: str, symbol: str, period: str = "day",
-             dataDir: Path | None = None, *, adjusted: bool = False) -> Path:
+             dataDir: Path | None = None, *, adjusted: bool = False, replace: bool = False) -> Path:
     """增量合并；复权历史修订时备份旧文件，以本次数据源窗口完整重建。
 
     不猜测复权因子，不拼接两套价格基准。重建可能缩短历史窗口，attrs记录原因。
@@ -51,8 +51,8 @@ def saveBars(df: pd.DataFrame, market: str, symbol: str, period: str = "day",
             oldInfo = old.attrs.get(META_KEY)
             if oldInfo and not info:
                 raise ValueError("新数据缺少来源或行情口径，不能覆盖已确认口径的缓存")
-            reset = bool(info) != bool(oldInfo)
-            if info and oldInfo:
+            reset = replace or bool(info) != bool(oldInfo)
+            if info and oldInfo and not replace:
                 if info.get("source") != oldInfo.get("source") or any(info.get(k) != oldInfo.get(k) for k in IDENTITY_FIELDS):
                     raise ValueError("数据源、标的或行情口径不一致，不能直接拼接；请先跨源核对并独立重建缓存")
             if adjusted and not old.empty:

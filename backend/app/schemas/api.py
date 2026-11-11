@@ -18,6 +18,10 @@ class SymbolRequest(BaseModel):
 
 
 class FetchBarsRequest(SymbolRequest):
+    source: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    period: Literal["day", "week", "month"] = "day"
+    adjustment: Literal["none", "qfq", "hfq", "yahoo_auto_adjust"] | None = None
+    replaceCache: bool = False
     startDate: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     endDate: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
 
@@ -53,6 +57,10 @@ class BarPoint(BaseModel):
     low: float
     close: float
     volume: float
+
+
+class DownloadBarsResponse(FetchBarsResponse):
+    bars: list[BarPoint]
 
 
 class RunBacktestRequest(SymbolRequest):

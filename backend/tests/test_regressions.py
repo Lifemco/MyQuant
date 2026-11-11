@@ -176,7 +176,7 @@ def test_refresh_includes_cached_periods_and_reports_failures(tmp_path,monkeypat
             calls.append(period)
             if period=='month':raise RuntimeError('source unavailable')
             return makeBars([100.,110.])
-    monkeypatch.setattr(monitor,'_buildProvider',lambda m:Provider())
+    monkeypatch.setattr(monitor,'_buildProvider',lambda m, **kwargs:Provider())
     response=client.post('/api/monitor/refresh')
     assert response.status_code==200
     result=response.json()[0]

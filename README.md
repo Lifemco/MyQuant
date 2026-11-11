@@ -70,3 +70,11 @@ npm run test:e2e
 数据带有来源、复权、成交量单位、币种和采集时点等信息。不同来源/复权/单位的表不能直接拼接；跨源核对仅比较同标的共同交易日的已确认、不复权价量，先统一成交量单位。旧缓存会标记口径未知，刷新时备份重建。
 
 输入 `000001` 代表平安银行，`sh000001` 代表上证指数，二者独立存储。页面显示K线来源、价格复权及成交量单位。规则、误差阈值和现有接入范围见 [行情口径说明](docs/market-data-conventions.md)。
+
+## 第三方接口与文件下载
+
+第三方地址、超时、SDK入口、参数及字段映射集中在 **`backend/app/data/third_party.py`**；历史、快照、分时可分别配置默认源，修改后重启后端。
+
+已接入AKShare和BaoStock历史下载。在 **策略中心 → 行情下载** 选择来源、日期与复权方式即可下载CSV/JSON。API为 `GET /api/data/providers` 和 `POST /api/data/download`，带有来源和口径信息。
+
+安装新增SDK请重新执行 `pip install -r backend/requirements-lock.txt`。能力范围、缓存切换、配置修改及网络限制见 [第三方接口说明](docs/third-party-interfaces.md)。

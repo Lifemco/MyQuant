@@ -37,7 +37,7 @@ def _ensureBars(market: str, symbol: str) -> None:
 def _fetchName(market: str, symbol: str) -> str:
     """尽力补全股票名称,失败则返回代码本身。"""
     try:
-        provider = _buildProvider(market)
+        provider = _buildProvider(market, operation="quotes")
         fetchName = getattr(provider, "fetchName", None)
         if callable(fetchName):
             return fetchName(symbol) or symbol

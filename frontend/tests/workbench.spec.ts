@@ -24,6 +24,8 @@ async function mockWorkbench(page: Page, count = 2) {
     delayA: false,
     delayStrategies: false,
     failChart: false,
+    failDownload: false,
+    downloads: [] as { source: string; symbol: string; startDate: string; adjustment: string }[],
     quoteRequests: [] as number[],
     chartParams: [] as number[],
     batchSizes: [] as number[],
@@ -53,6 +55,54 @@ async function mockWorkbench(page: Page, count = 2) {
             },
           },
         ],
+      })
+    }
+    if (path === 'data/providers')
+      return route.fulfill({
+        json: [
+          {
+            id: 'tencent',
+            label: '腾讯',
+            enabled: true,
+            markets: ['cn', 'hk'],
+            periods: ['day', 'week', 'month'],
+            adjustments: ['none', 'qfq', 'hfq'],
+          },
+          {
+            id: 'yahoo',
+            label: 'Yahoo / yfinance',
+            enabled: true,
+            markets: ['us'],
+            periods: ['day', 'week', 'month'],
+            adjustments: ['none', 'yahoo_auto_adjust'],
+          },
+          {
+            id: 'akshare',
+            label: 'AKShare（东方财富）',
+            enabled: true,
+            markets: ['cn', 'hk'],
+            periods: ['day', 'week', 'month'],
+            adjustments: ['none', 'qfq', 'hfq'],
+          },
+          {
+            id: 'baostock',
+            label: 'BaoStock',
+            enabled: true,
+            markets: ['cn'],
+            periods: ['day', 'week', 'month'],
+            adjustments: ['none', 'qfq', 'hfq'],
+          },
+        ],
+      })
+    if (path === 'data/download') {
+      const request = route.request().postDataJSON()
+      state.downloads.push(request)
+      if (state.failDownload)
+        return route.fulfill({ status: 502, json: { detail: '数据源连接失败' } })
+      return route.fulfill({
+        contentType: 'text/csv',
+        headers: { 'Content-Disposition': "attachment; filename*=UTF-8''baostock_600519.csv" },
+        body: 'date,close,meta_source\n2024-01-02,100,baostock\n',
       })
     }
     if (path === 'data/symbols')
@@ -228,4 +278,37 @@ test('K-line source adjustment and native units are shown without guessing legac
   await expect(page.getByTestId('data-convention')).toHaveText(
     'K线来源、复权与单位未确认，请刷新后核对',
   )
+})
+
+test('download form selects BaoStock and saves a file with requested dates', async ({ page }) => {
+  const state = await mockWorkbench(page)
+  await page.getByRole('menuitem', { name: '策略中心' }).click()
+  const source = page.getByRole('combobox', { name: '下载数据源', exact: true })
+  await expect(source).toBeEnabled()
+  await source.locator('xpath=ancestor::div[contains(@class, "el-select__wrapper")]').click()
+  await page.getByRole('option', { name: 'BaoStock', exact: true }).click()
+  await page.getByLabel('下载股票代码').fill('600519')
+  await page.getByLabel('下载开始日期').fill('2024-01-01')
+  await page.getByLabel('下载结束日期').fill('2024-01-03')
+  const filePromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: '下载行情文件', exact: true }).click()
+  const file = await filePromise
+  expect(file.suggestedFilename()).toBe('baostock_600519.csv')
+  expect(state.downloads[0]).toMatchObject({
+    source: 'baostock',
+    market: 'cn',
+    symbol: '600519',
+    startDate: '2024-01-01',
+    endDate: '2024-01-03',
+    adjustment: 'none',
+  })
+})
+
+test('download failures show upstream error instead of saving a file', async ({ page }) => {
+  const state = await mockWorkbench(page)
+  state.failDownload = true
+  await page.getByRole('menuitem', { name: '策略中心' }).click()
+  await page.getByLabel('下载股票代码').fill('600519')
+  await page.getByRole('button', { name: '下载行情文件', exact: true }).click()
+  await expect(page.getByText('数据源连接失败', { exact: true })).toBeVisible()
 })

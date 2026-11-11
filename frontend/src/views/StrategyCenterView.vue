@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { httpClient, extractErrorMessage } from '@/api/client'
 import { listStrategies, runBatchBacktest, runOptimize } from '@/api/backtest'
+import DataDownloadCard from '@/components/DataDownloadCard.vue'
 import type { BatchResultItem, OptimizeResultItem, StrategyMeta, SymbolInfo } from '@/types'
 
 const strategies = ref<StrategyMeta[]>([])
@@ -192,5 +193,6 @@ function percent(value?: number): string {
         <ElTableColumn prop="metrics.sharpeRatio" label="夏普（降序）" />
       </ElTable>
     </ElCard>
+    <DataDownloadCard />
   </main>
 </template>
