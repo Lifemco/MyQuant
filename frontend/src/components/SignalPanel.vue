@@ -40,9 +40,9 @@ function fmtPrice(row: unknown): string {
       :class="holding ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'"
     >
       <div>
-        <div class="text-xs text-gray-500">策略信号·日线(T+1执行)</div>
+        <div class="text-xs text-gray-500">已确认日线信号(T+1执行)</div>
         <div class="mt-0.5 text-xl font-bold" :class="holding ? 'text-red-500' : 'text-gray-500'">
-          {{ holding ? '持仓中' : '空仓等待' }}
+          {{ holding ? '目标持仓' : '目标空仓' }}
         </div>
       </div>
       <div v-if="lastSignal" class="text-right text-xs">

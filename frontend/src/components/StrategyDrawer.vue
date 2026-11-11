@@ -42,6 +42,7 @@ const form = reactive({ strategy: '', params: {} as Record<string, number>, feeR
 const saving = ref(false)
 const running = ref(false)
 const backtestResult = ref<BacktestResult | null>(null)
+let backtestVersion = 0
 
 const currentStrategy = computed(() => strategies.value.find((s) => s.name === form.strategy))
 
@@ -49,11 +50,21 @@ const currentStrategy = computed(() => strategies.value.find((s) => s.name === f
 watch(
   () => props.modelValue,
   async (visible) => {
+    backtestVersion++
+    running.value = false
     if (!visible || !props.item) return
+    const key = `${props.item.market}/${props.item.symbol}`
     backtestResult.value = null
     if (strategies.value.length === 0) {
-      strategies.value = await listStrategies()
+      try {
+        strategies.value = await listStrategies()
+      } catch (error) {
+        ElMessage.error(extractErrorMessage(error))
+        return
+      }
     }
+    if (!props.modelValue || !props.item || key !== `${props.item.market}/${props.item.symbol}`)
+      return
     form.strategy = props.item.strategy
     form.params = { ...props.item.params }
   },
@@ -94,19 +105,28 @@ async function handleSave(): Promise<void> {
 
 async function handleRunBacktest(): Promise<void> {
   if (!props.item) return
+  const version = ++backtestVersion
+  const key = `${props.item.market}/${props.item.symbol}`
   running.value = true
   try {
-    backtestResult.value = await runBacktest({
+    const result = await runBacktest({
       market: props.item.market,
       symbol: props.item.symbol,
       strategy: form.strategy,
       params: form.params,
       feeRate: form.feeRate,
     })
+    if (
+      version === backtestVersion &&
+      props.modelValue &&
+      props.item &&
+      key === `${props.item.market}/${props.item.symbol}`
+    )
+      backtestResult.value = result
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   } finally {
-    running.value = false
+    if (version === backtestVersion) running.value = false
   }
 }
 </script>
@@ -135,7 +155,7 @@ async function handleRunBacktest(): Promise<void> {
             @change="handleParamEdit"
           />
         </ElFormItem>
-        <ElFormItem label="手续费率">
+        <ElFormItem label="单边费率">
           <ElInputNumber
             v-model="form.feeRate"
             :min="0"

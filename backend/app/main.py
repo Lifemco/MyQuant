@@ -10,7 +10,7 @@ app = FastAPI(title="Quant Workbench", version="0.1.0")
 # 本地开发放开跨域(Vite 默认 5173)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -19,6 +19,16 @@ app.include_router(data.router)
 app.include_router(backtest.router)
 app.include_router(watchlist.router)
 app.include_router(monitor.router)
+
+
+@app.exception_handler(ValueError)
+async def invalidInputHandler(request: Request, exc: ValueError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@app.exception_handler(KeyError)
+async def unknownStrategyHandler(request: Request, exc: KeyError) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 @app.exception_handler(Exception)

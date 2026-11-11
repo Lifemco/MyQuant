@@ -4,6 +4,7 @@
 其次回落到 macOS 系统代理设置,再写入 HTTPS_PROXY 供 curl_cffi 使用。
 """
 import os
+from datetime import date, timedelta
 from urllib.request import getproxies
 
 import pandas as pd
@@ -36,7 +37,7 @@ class YFinanceProvider(DataProvider):
 
         interval = self._PERIOD_INTERVAL.get(period, "1d")
         raw = yf.download(
-            symbol, start=startDate, end=endDate, interval=interval,
+            symbol, start=startDate, end=(date.fromisoformat(endDate) + timedelta(days=1)).isoformat(), interval=interval,
             auto_adjust=True, progress=False,
         )
         if raw.empty:

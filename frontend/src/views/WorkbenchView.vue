@@ -14,136 +14,107 @@ import WatchlistPanel from '@/components/WatchlistPanel.vue'
 import { useWatchlistStore } from '@/stores/watchlist'
 import type { ChartData, MinuteData, Period } from '@/types'
 
-/** 快照轮询间隔(3s) */
 const QUOTE_POLL_MS = 3000
-
 type ChartTab = Period | 'minute'
-
 const PERIOD_TABS: { value: ChartTab; label: string }[] = [
   { value: 'minute', label: '分时' },
   { value: 'day', label: '日线' },
   { value: 'week', label: '周线' },
   { value: 'month', label: '月线' },
 ]
-
 const store = useWatchlistStore()
-
-// 支持 URL hash 直达指定图表(#minute/#day/#week/#month),便于分享与调试
-const initialTab = ((): ChartTab => {
-  const hash = window.location.hash.replace('#', '')
-  return PERIOD_TABS.some((t) => t.value === hash) ? (hash as ChartTab) : 'day'
-})()
-const chartTab = ref<ChartTab>(initialTab)
+const hash = window.location.hash.replace('#', '')
+const chartTab = ref<ChartTab>(
+  PERIOD_TABS.some((t) => t.value === hash) ? (hash as ChartTab) : 'day',
+)
 const chartData = ref<ChartData | null>(null)
 const minuteData = ref<MinuteData | null>(null)
 const chartLoading = ref(false)
 const drawerVisible = ref(false)
 const autoRefresh = ref(true)
-const lastRefreshAt = ref<string>('')
-
-// 抽屉编辑中的临时策略参数(未保存也可预览信号)
 const previewOverride = ref<{ strategy: string; params: Record<string, number> } | null>(null)
-
 const selected = computed(() => store.selected)
-
-/** 左侧自选列表折叠状态 */
 const listCollapsed = ref(false)
-
-/** 信号面板固定高度(px) */
 const SIGNAL_PANEL_HEIGHT = 260
-
-/** 信号面板数据:固定日线口径,与图表周期无关 */
 const signalData = ref<ChartData | null>(null)
+const signalAsOf = computed(() => signalData.value?.signalAsOf ?? selected.value?.signalAsOf ?? '')
+let requestVersion = 0
+let disposed = false
 
-/** 加载 K线(当前周期) */
-async function loadChart(): Promise<void> {
+/** 图表与日线面板共享同一份请求上下文，过期响应不得写回。 */
+async function reloadActive(): Promise<void> {
+  const version = ++requestVersion
   const item = selected.value
-  if (!item || chartTab.value === 'minute') return
-  chartLoading.value = true
-  try {
-    chartData.value = await getChartData({
-      market: item.market,
-      symbol: item.symbol,
-      strategy: previewOverride.value?.strategy ?? item.strategy,
-      params: previewOverride.value?.params ?? item.params,
-      period: chartTab.value,
-    })
-  } catch (error) {
-    ElMessage.error(extractErrorMessage(error))
-  } finally {
-    chartLoading.value = false
-  }
-}
-
-/** 加载信号面板数据:始终按日线计算;日线 tab 时直接复用图表数据 */
-async function loadSignals(): Promise<void> {
-  const item = selected.value
+  chartData.value = null
+  minuteData.value = null
+  signalData.value = null
   if (!item) {
-    signalData.value = null
+    chartLoading.value = false
     return
   }
-  if (chartTab.value === 'day' && chartData.value) {
-    signalData.value = chartData.value
-    return
+  const tab = chartTab.value
+  const payload = {
+    market: item.market,
+    symbol: item.symbol,
+    strategy: previewOverride.value?.strategy ?? item.strategy,
+    params: { ...(previewOverride.value?.params ?? item.params) },
   }
-  try {
-    signalData.value = await getChartData({
-      market: item.market,
-      symbol: item.symbol,
-      strategy: previewOverride.value?.strategy ?? item.strategy,
-      params: previewOverride.value?.params ?? item.params,
-      period: 'day',
-    })
-  } catch {
-    // 信号加载失败保留旧数据
-  }
+  chartLoading.value = true
+  const daily = getChartData({ ...payload, period: 'day' })
+  const visual =
+    tab === 'day'
+      ? daily
+      : tab === 'minute'
+        ? getMinuteData(item.market, item.symbol)
+        : getChartData({ ...payload, period: tab })
+  const [chartResult, signalResult] = await Promise.allSettled([visual, daily])
+  if (disposed || version !== requestVersion) return
+  if (chartResult.status === 'fulfilled') {
+    if (tab === 'minute') minuteData.value = chartResult.value as MinuteData
+    else chartData.value = chartResult.value as ChartData
+  } else ElMessage.error(extractErrorMessage(chartResult.reason))
+  if (signalResult.status === 'fulfilled') signalData.value = signalResult.value
+  else if (tab !== 'day') ElMessage.error(extractErrorMessage(signalResult.reason))
+  chartLoading.value = false
 }
 
-/** 加载当日分时 */
-async function loadMinute(silent = false): Promise<void> {
+async function loadMinute(): Promise<void> {
   const item = selected.value
-  if (!item) return
-  if (!silent) chartLoading.value = true
+  const version = requestVersion
+  if (!item || chartTab.value !== 'minute') return
   try {
-    minuteData.value = await getMinuteData(item.market, item.symbol)
+    const data = await getMinuteData(item.market, item.symbol)
+    if (
+      !disposed &&
+      version === requestVersion &&
+      store.selectedKey === `${item.market}/${item.symbol}`
+    )
+      minuteData.value = data
   } catch {
-    if (!silent) {
-      minuteData.value = null
-      ElMessage.warning('分时数据暂不可用(可能非交易日或市场不支持)')
-    }
-  } finally {
-    if (!silent) chartLoading.value = false
+    /* 暂时失败保留同一标的的分时数据，其交易日期仍可见。 */
   }
 }
 
-/** 手动刷新:抓最新K线、重算信号、重载图表 */
 async function handleRefresh(): Promise<void> {
   try {
     await store.refresh()
     await reloadActive()
-    lastRefreshAt.value = new Date().toLocaleTimeString('zh-CN')
+    const failures = store.items.filter((item) => item.refreshError || item.error)
+    if (failures.length)
+      ElMessage.warning(
+        failures.map((item) => `${item.name}: ${item.refreshError || item.error}`).join('；'),
+      )
+    else ElMessage.success('行情和信号已刷新')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error))
   }
 }
 
-async function reloadActive(): Promise<void> {
-  if (chartTab.value === 'minute') {
-    await loadMinute()
-  } else {
-    await loadChart()
-  }
-  await loadSignals()
-}
-
-/** 抽屉参数变化 → 图表用临时参数重算信号(不保存) */
 function handlePreview(strategy: string, params: Record<string, number>): void {
-  previewOverride.value = { strategy, params }
-  loadChart()
-  loadSignals()
+  previewOverride.value = { strategy, params: { ...params } }
+  void reloadActive()
 }
 
-/** 抽屉保存成功 → 清除临时参数,刷新列表、图表与信号 */
 async function handleSaved(): Promise<void> {
   previewOverride.value = null
   await store.load()
@@ -153,33 +124,57 @@ async function handleSaved(): Promise<void> {
 function handleTabChange(tab: ChartTab): void {
   chartTab.value = tab
   window.location.hash = tab
-  reloadActive()
+  void reloadActive()
 }
 
-// 切换选中股票时清除预览覆盖并重载
 watch(
   () => store.selectedKey,
   () => {
     previewOverride.value = null
-    reloadActive()
+    drawerVisible.value = false
+    void reloadActive()
   },
 )
-
-let pollTimer: ReturnType<typeof setInterval> | null = null
-onMounted(async () => {
-  await store.load()
-  await store.pollQuotes()
-  await reloadActive()
-  lastRefreshAt.value = new Date().toLocaleTimeString('zh-CN')
-  // 3s 轮询:快照 + 分时图(若正在看分时)
-  pollTimer = setInterval(async () => {
-    if (!autoRefresh.value) return
-    await store.pollQuotes()
-    if (chartTab.value === 'minute') await loadMinute(true)
-  }, QUOTE_POLL_MS)
+watch(drawerVisible, (visible) => {
+  if (!visible && previewOverride.value) {
+    previewOverride.value = null
+    void reloadActive()
+  }
 })
 
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let polling = false
+async function poll(): Promise<void> {
+  if (polling || disposed || !autoRefresh.value) return
+  polling = true
+  try {
+    if (!store.items.length) await store.load()
+    await store.pollQuotes()
+    await loadMinute()
+  } catch {
+    /* 初始化失败后继续重试。 */
+  } finally {
+    polling = false
+  }
+}
+onMounted(async () => {
+  try {
+    await store.load()
+    if (!disposed) {
+      await store.pollQuotes()
+      await reloadActive()
+    }
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error))
+  }
+  if (!disposed)
+    pollTimer = setInterval(() => {
+      void poll()
+    }, QUOTE_POLL_MS)
+})
 onBeforeUnmount(() => {
+  disposed = true
+  requestVersion++
   if (pollTimer) clearInterval(pollTimer)
 })
 </script>
@@ -195,7 +190,8 @@ onBeforeUnmount(() => {
         <span class="rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-600">监控模式</span>
       </div>
       <div class="flex items-center gap-3 text-sm text-gray-500">
-        <span v-if="lastRefreshAt">信号更新于 {{ lastRefreshAt }}</span>
+        <span v-if="signalAsOf">已确认日线截至 {{ signalAsOf }}</span>
+        <span v-if="previewOverride" class="text-amber-600">策略预览（未保存）</span>
         <span class="flex items-center gap-1">
           实时刷新(3s)
           <ElSwitch v-model="autoRefresh" size="small" />
@@ -264,7 +260,9 @@ onBeforeUnmount(() => {
               </button>
               <span class="ml-auto text-xs text-gray-400">
                 {{
-                  chartTab === 'minute' ? '当日分钟线,3s 自动更新' : '买卖点为该周期下的策略信号'
+                  chartTab === 'minute'
+                    ? `分时交易日 ${minuteData?.date || '未知'}，3s 自动更新`
+                    : '买卖点为该周期下的策略信号'
                 }}
               </span>
             </div>

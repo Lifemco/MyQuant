@@ -1,7 +1,7 @@
 """A股/港股数据提供者:腾讯行情接口(web.ifzq.gtimg.cn / qt.gtimg.cn)。
 
 选择腾讯而非东财/akshare 的原因:本机网络环境下东财 HTTPS 被阻断,
-腾讯接口直连可用且无需代理。强制 trust_env=False 避免系统代理干扰。
+腾讯接口直连可用且无需代理。遵循系统代理环境配置。
 """
 from datetime import datetime
 
@@ -23,10 +23,10 @@ SUPPORTED_PERIODS = ("day", "week", "month")
 
 def _inferCnPrefix(symbol: str) -> str:
     """根据 A 股代码推断交易所前缀。"""
+    if symbol.startswith(("4", "8", "920")):
+        return "bj"
     if symbol.startswith(("6", "9")):
         return "sh"
-    if symbol.startswith(("4", "8")):
-        return "bj"
     return "sz"
 
 
@@ -52,8 +52,8 @@ class TencentProvider(DataProvider):
             param = f"{code},day,{startDate},{endDate},{MAX_BARS_PER_REQUEST},qfq"
         else:
             param = f"{code},{period},,,{MAX_BARS_PER_REQUEST},qfq"
-        # trust_env=False: 直连腾讯,不走系统代理
-        with httpx.Client(trust_env=False, timeout=30) as client:
+        # 遵循运行环境的代理和CA配置
+        with httpx.Client(trust_env=True, timeout=30) as client:
             resp = client.get(TENCENT_KLINE_URL, params={"param": param})
             resp.raise_for_status()
             payload = resp.json()
@@ -92,7 +92,7 @@ class TencentProvider(DataProvider):
         均价 = 累计成交额 / 累计成交量(A股 1 手 = 100 股,港股成交量单位为股)。
         """
         code = self._fullCode(symbol)
-        with httpx.Client(trust_env=False, timeout=15) as client:
+        with httpx.Client(trust_env=True, timeout=15) as client:
             resp = client.get(TENCENT_MINUTE_URL, params={"code": code})
             resp.raise_for_status()
             payload = resp.json()
@@ -112,10 +112,23 @@ class TencentProvider(DataProvider):
         # 收盘后腾讯会追加横盘尾巴(A股 15:00 后、港股 16:00 后),过滤掉
         maxTime = "15:00" if self.market == "cn" else "16:00"
         return {
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": self._minuteTradeDate(node, code),
             "prevClose": prevClose,
             "points": self._parseMinutePoints(rawPoints, lotSize, maxTime),
         }
+
+    @staticmethod
+    def _minuteTradeDate(node: dict, code: str) -> str:
+        raw = str(node.get("data", {}).get("date", ""))
+        qt = node.get("qt", {}).get(code, [])
+        if not raw and len(qt) > 30:
+            raw = str(qt[30])
+        for fmt, length in (("%Y%m%d", 8), ("%Y/%m/%d", 10), ("%Y-%m-%d", 10)):
+            try:
+                return datetime.strptime(raw[:length], fmt).date().isoformat()
+            except ValueError:
+                pass
+        return ""  # 无上游日期时不捏造“今天”。
 
     @staticmethod
     def _parseMinutePoints(rawPoints: list[str], lotSize: int, maxTime: str = "15:00") -> list[dict]:
@@ -155,7 +168,7 @@ class TencentProvider(DataProvider):
         if not symbols:
             return {}
         codes = [self._fullCode(s) for s in symbols]
-        with httpx.Client(trust_env=False, timeout=10) as client:
+        with httpx.Client(trust_env=True, timeout=10) as client:
             resp = client.get(f"{TENCENT_QUOTE_URL}{','.join(codes)}")
             resp.raise_for_status()
         text = resp.content.decode("gbk", errors="ignore")

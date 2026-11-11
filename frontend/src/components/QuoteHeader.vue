@@ -121,7 +121,15 @@ function compareWith(v: number | null | undefined): string {
           </span>
         </div>
         <div class="mt-1 text-xs text-gray-400">
-          {{ quote?.time ? `更新 ${formatQuoteTime(quote.time)}` : '等待快照…' }}
+          {{
+            quote?.time
+              ? `更新 ${formatQuoteTime(quote.time)}`
+              : `缓存收盘价 · ${item.dataAsOf ?? '日期未知'}`
+          }}
+          <span v-if="item.market === 'us'">（美股仅日线，手动刷新）</span>
+          <div v-if="item.refreshError || item.error" class="text-amber-600">
+            {{ item.refreshError || item.error }}
+          </div>
         </div>
       </div>
 

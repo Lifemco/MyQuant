@@ -8,6 +8,7 @@ from app.api.data import _buildProvider
 from app.backtest.strategies import getStrategy
 from app.data.store import loadBars, saveBars
 from app.monitor.service import computeSignalMarkers, summarizeBars
+from app.monitor.session import closedBars, marketNow
 from app.schemas.monitor import (
     ChartRequest,
     ChartResponse,
@@ -26,12 +27,19 @@ def _overviewFor(item: dict) -> WatchOverviewItem:
     """对单只自选计算信号总览;数据缺失时降级为无信号状态。"""
     bars = loadBars(item["market"], item["symbol"])
     base = {**item, "holding": False, "lastSignal": None, "close": None, "changePct": None}
+    confirmed = closedBars(bars, item["market"]) if bars is not None else None
+    if bars is not None and not bars.empty:
+        base["dataAsOf"] = str(bars["date"].max().date())
+        base["error"] = bars.attrs.get("historyNotice")
+    if confirmed is not None and not confirmed.empty:
+        base["signalAsOf"] = str(confirmed["date"].max().date())
     if bars is None or bars.empty:
         return WatchOverviewItem(**base)
     try:
         strategy = getStrategy(item["strategy"], **item.get("params", {}))
-        signals = computeSignalMarkers(bars, strategy)
-    except (KeyError, ValueError):
+        signals = computeSignalMarkers(confirmed, strategy)
+    except (KeyError, ValueError, TypeError, ArithmeticError) as exc:
+        base["error"] = f"策略计算失败: {exc}"
         return WatchOverviewItem(**base)
     summary = summarizeBars(bars)
     # base 已含默认状态,此处只覆盖计算结果,避免关键字重复
@@ -55,20 +63,24 @@ def overview() -> list[WatchOverviewItem]:
 @router.post("/refresh", response_model=list[WatchOverviewItem])
 def refresh() -> list[WatchOverviewItem]:
     """刷新全部自选股的最新行情(增量合并),再返回信号总览。"""
-    items = loadWatchlist()
-    end = date.today()
-    start = end - timedelta(days=365 * 3)
-    for item in items:
-        try:
-            df = _buildProvider(item["market"]).fetchDailyBars(
-                item["symbol"], start.isoformat(), end.isoformat()
-            )
-            if not df.empty:
-                saveBars(df, item["market"], item["symbol"])
-        except Exception:
-            # 单票刷新失败不影响其他票
-            continue
-    return [_overviewFor(item) for item in items]
+    results = []
+    for item in loadWatchlist():
+        errors = []
+        # 已经打开过的周/月图也必须随手动刷新更新。
+        for period in ("day", "week", "month"):
+            if period != "day" and loadBars(item["market"], item["symbol"], period=period) is None:
+                continue
+            try:
+                df = _fetchAndCache(item["market"], item["symbol"], period)
+                if df is None or df.empty:
+                    errors.append(f"{period}: 数据源返回空数据")
+            except Exception as exc:
+                errors.append(f"{period}: {getattr(exc, 'detail', str(exc))}")
+        result = _overviewFor(item)
+        result.refreshError = "; ".join(errors) or None
+        result.refreshedAt = marketNow(item["market"]).isoformat() if not errors else None
+        results.append(result)
+    return results
 
 
 @router.post("/chart", response_model=ChartResponse)
@@ -85,13 +97,15 @@ def chart(req: ChartRequest) -> ChartResponse:
         bars = _mergeTodayBar(req.market, req.symbol, bars)
     try:
         strategy = getStrategy(req.strategy, **req.params)
-        signals = computeSignalMarkers(bars, strategy)
+        confirmed = closedBars(bars, req.market, req.period)
+        signals = computeSignalMarkers(confirmed, strategy)
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return ChartResponse(
+        signalAsOf=str(confirmed["date"].max().date()) if not confirmed.empty else None,
         bars=[
             {
                 "date": str(row.date.date()),
@@ -160,7 +174,7 @@ def _mergeTodayBar(market: str, symbol: str, bars: pd.DataFrame) -> pd.DataFrame
         quote = fetchQuotes([symbol]).get(symbol)
         if not quote:
             return bars
-        return _mergeQuoteBar(bars, quote, date.today())
+        return _mergeQuoteBar(bars, quote, marketNow(market).date())
     except Exception:
         return bars
 
@@ -169,7 +183,7 @@ def _fetchAndCache(market: str, symbol: str, period: str) -> "pd.DataFrame | Non
     """按需抓取指定周期K线并缓存,失败返回 None。"""
     from datetime import date, timedelta
 
-    end = date.today()
+    end = marketNow(market).date()
     # 周/月线区间拉长,日线保持约 3 年
     start = end - timedelta(days=365 * (3 if period == "day" else 12))
     try:
@@ -180,8 +194,8 @@ def _fetchAndCache(market: str, symbol: str, period: str) -> "pd.DataFrame | Non
         raise HTTPException(status_code=502, detail=f"{period} 行情抓取失败: {exc}") from exc
     if df.empty:
         return None
-    saveBars(df, market, symbol, period=period)
-    return df
+    saveBars(df, market, symbol, period=period, adjusted=True)
+    return loadBars(market, symbol, period=period)
 
 
 @router.post("/quotes", response_model=list[QuoteSnapshot])
@@ -198,8 +212,9 @@ def quotes(req: QuoteRequest) -> list[QuoteSnapshot]:
             provider = _buildProvider(market)
             fetchQuotes = getattr(provider, "fetchQuotes", None)
             if not callable(fetchQuotes):
-                continue
-            raw = fetchQuotes(symbols)
+                raw = {}
+            else:
+                raw = fetchQuotes(symbols)
         except Exception:
             # 单市场失败不影响其他市场,降级为占位
             raw = {}

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.api.data import _buildProvider
 from app.data.store import loadBars, saveBars
+from app.monitor.session import marketNow
 from app.schemas.monitor import WatchItemIn, WatchItemOut, WatchItemUpdate
 from app.watchlist.store import (
     addWatchItem,
@@ -20,7 +21,7 @@ def _ensureBars(market: str, symbol: str) -> None:
     """本地无数据时自动抓取最近约 640 根日线。"""
     if loadBars(market, symbol) is not None:
         return
-    end = date.today()
+    end = marketNow(market).date()
     start = end - timedelta(days=365 * 3)
     try:
         df = _buildProvider(market).fetchDailyBars(
@@ -30,7 +31,7 @@ def _ensureBars(market: str, symbol: str) -> None:
         raise HTTPException(status_code=502, detail=f"行情抓取失败: {exc}") from exc
     if df.empty:
         raise HTTPException(status_code=404, detail=f"未获取到 {symbol} 的行情,请检查代码")
-    saveBars(df, market, symbol)
+    saveBars(df, market, symbol, adjusted=True)
 
 
 def _fetchName(market: str, symbol: str) -> str:

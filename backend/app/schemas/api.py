@@ -1,14 +1,31 @@
 """请求/响应模型(Pydantic)。"""
 from typing import Literal
+from datetime import date
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.core.validation import validateSymbol
 
 
-class FetchBarsRequest(BaseModel):
+class SymbolRequest(BaseModel):
     market: Literal["cn", "hk", "us"]
     symbol: str = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def validSymbol(self):
+        self.symbol = validateSymbol(self.market, self.symbol)
+        return self
+
+
+class FetchBarsRequest(SymbolRequest):
     startDate: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     endDate: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+    @model_validator(mode="after")
+    def validDates(self):
+        if date.fromisoformat(self.startDate) > date.fromisoformat(self.endDate):
+            raise ValueError("开始日期不能晚于结束日期")
+        return self
 
 
 class FetchBarsResponse(BaseModel):
@@ -36,9 +53,7 @@ class BarPoint(BaseModel):
     volume: float
 
 
-class RunBacktestRequest(BaseModel):
-    market: Literal["cn", "hk", "us"]
-    symbol: str = Field(min_length=1, max_length=20)
+class RunBacktestRequest(SymbolRequest):
     strategy: str
     params: dict = Field(default_factory=dict)
     feeRate: float = Field(default=0.0003, ge=0, le=0.01)
@@ -64,6 +79,8 @@ class Trade(BaseModel):
     entryDate: str
     exitDate: str | None
     pnlPct: float
+    entryPrice: float | None = None
+    exitPrice: float | None = None
 
 
 class RunBacktestResponse(BaseModel):
@@ -87,7 +104,7 @@ class ApiError(BaseModel):
 class BatchBacktestRequest(BaseModel):
     """批量回测:同一策略跑多个标的。"""
 
-    symbols: list[dict] = Field(min_length=1, max_length=20)  # [{market, symbol}]
+    symbols: list[SymbolRequest] = Field(min_length=1, max_length=20)  # [{market, symbol}]
     strategy: str
     params: dict = Field(default_factory=dict)
     feeRate: float = Field(default=0.0003, ge=0, le=0.01)
@@ -100,7 +117,7 @@ class BatchResultItem(BaseModel):
     error: str | None = None
 
 
-class OptimizeRequest(BaseModel):
+class OptimizeRequest(SymbolRequest):
     """参数寻优:网格扫描,返回按夏普降序的结果。"""
 
     market: Literal["cn", "hk", "us"]

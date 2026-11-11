@@ -3,8 +3,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.api import SymbolRequest
 
-class WatchItemIn(BaseModel):
+
+class WatchItemIn(SymbolRequest):
     """添加自选股请求。"""
 
     market: Literal["cn", "hk", "us"]
@@ -43,9 +45,14 @@ class WatchOverviewItem(WatchItemOut):
     lastSignal: SignalMarker | None
     close: float | None
     changePct: float | None
+    dataAsOf: str | None = None
+    signalAsOf: str | None = None
+    error: str | None = None
+    refreshError: str | None = None
+    refreshedAt: str | None = None
 
 
-class ChartRequest(BaseModel):
+class ChartRequest(SymbolRequest):
     """K线 + 信号图请求:可携带临时策略参数(不落地)。"""
 
     market: Literal["cn", "hk", "us"]
@@ -62,6 +69,7 @@ class ChartResponse(BaseModel):
     markers: list[SignalMarker]
     holding: bool
     lastSignal: SignalMarker | None
+    signalAsOf: str | None = None
 
 
 class QuoteRequest(BaseModel):

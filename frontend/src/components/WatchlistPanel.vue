@@ -146,7 +146,10 @@ function fmtChange(changePct: number | null): string {
           <ElTag v-else size="small" type="info">无信号</ElTag>
         </div>
         <div class="mt-1 text-xs text-gray-400">
-          {{ item.holding ? '● 持仓中' : '○ 空仓等待' }}
+          {{ item.holding ? '● 目标持仓' : '○ 目标空仓' }}
+          <span v-if="item.error || item.refreshError" class="text-amber-600">
+            · {{ item.refreshError || item.error }}</span
+          >
         </div>
       </div>
     </div>

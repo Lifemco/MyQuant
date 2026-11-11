@@ -9,8 +9,12 @@ export const httpClient = axios.create({
 /** 从 axios 错误中提取可读信息 */
 export function extractErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
-    const detail = (error.response?.data as { detail?: string } | undefined)?.detail
-    return detail ?? error.message
+    const detail = (error.response?.data as { detail?: unknown } | undefined)?.detail
+    return typeof detail === 'string'
+      ? detail
+      : Array.isArray(detail)
+        ? detail.map((item: { msg?: string }) => item.msg ?? '请求参数无效').join('；')
+        : error.message
   }
   return error instanceof Error ? error.message : String(error)
 }

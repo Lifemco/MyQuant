@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+# Frontend
+node_modules/
+dist/
+playwright-report/
+test-results/
+*.tsbuildinfo
+# Local files and runtime state
+.DS_Store
+.env
+.env.*
+!.env.example
+data/**/*.parquet
+data/watchlist.json
+data/**/*.lock
+data/**/*.bak

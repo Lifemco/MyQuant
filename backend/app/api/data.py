@@ -25,7 +25,7 @@ def fetchBars(req: FetchBarsRequest) -> FetchBarsResponse:
         raise HTTPException(status_code=502, detail=f"数据源抓取失败: {exc}") from exc
     if df.empty:
         raise HTTPException(status_code=404, detail=f"未获取到 {req.symbol} 的行情数据")
-    saveBars(df, req.market, req.symbol)
+    saveBars(df, req.market, req.symbol, adjusted=True)
     return FetchBarsResponse(
         market=req.market,
         symbol=req.symbol,

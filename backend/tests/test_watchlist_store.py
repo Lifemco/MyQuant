@@ -28,7 +28,7 @@ def test_updateStrategyAndParams(tmp_path):
         "cn", "600519", "rsi_reversion", {"window": 14}, dataDir=tmp_path
     )
     assert updated is not None and updated["strategy"] == "rsi_reversion"
-    assert getWatchItem("cn", "600519", dataDir=tmp_path)["params"] == {"window": 14}
+    assert getWatchItem("cn", "600519", dataDir=tmp_path)["params"] == {"window": 14, "oversold": 30.0, "overbought": 70.0}
 
 
 def test_updateMissingReturnsNone(tmp_path):

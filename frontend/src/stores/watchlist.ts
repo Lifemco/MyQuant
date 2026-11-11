@@ -39,8 +39,10 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     loading.value = true
     try {
       items.value = await getOverview()
-      if (!selectedKey.value && items.value.length > 0) {
-        selectedKey.value = keyOf(items.value[0].market, items.value[0].symbol)
+      if (!items.value.some((i) => keyOf(i.market, i.symbol) === selectedKey.value)) {
+        selectedKey.value = items.value[0]
+          ? keyOf(items.value[0].market, items.value[0].symbol)
+          : ''
       }
     } finally {
       loading.value = false
@@ -61,9 +63,11 @@ export const useWatchlistStore = defineStore('watchlist', () => {
   async function pollQuotes(): Promise<void> {
     if (items.value.length === 0) return
     try {
-      const snapshots = await getQuotes(
-        items.value.map((i) => ({ market: i.market, symbol: i.symbol })),
-      )
+      const requested = items.value.map((i) => ({ market: i.market, symbol: i.symbol }))
+      const snapshots = []
+      for (let start = 0; start < requested.length; start += 50) {
+        snapshots.push(...(await getQuotes(requested.slice(start, start + 50))))
+      }
       const map: Record<string, QuoteSnapshot> = {}
       for (const q of snapshots) {
         map[keyOf(q.market, q.symbol)] = q

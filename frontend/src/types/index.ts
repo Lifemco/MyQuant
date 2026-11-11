@@ -61,6 +61,8 @@ export interface Trade {
   entryDate: string
   exitDate: string | null
   pnlPct: number
+  entryPrice?: number | null
+  exitPrice?: number | null
 }
 
 /** 回测结果 */
@@ -106,6 +108,11 @@ export interface SignalMarker {
 
 /** 自选列表行:条目 + 实时状态 */
 export interface WatchOverviewItem extends WatchItem {
+  dataAsOf?: string | null
+  signalAsOf?: string | null
+  error?: string | null
+  refreshError?: string | null
+  refreshedAt?: string | null
   holding: boolean
   lastSignal: SignalMarker | null
   close: number | null
@@ -114,6 +121,7 @@ export interface WatchOverviewItem extends WatchItem {
 
 /** K线 + 信号图数据 */
 export interface ChartData {
+  signalAsOf?: string | null
   bars: BarPoint[]
   markers: SignalMarker[]
   holding: boolean

@@ -7,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 # 行情数据 Parquet 存储目录
 DATA_DIR = BASE_DIR / "data"
 
-# 默认手续费(双边万三)
+# 默认单边手续费(万三)
 DEFAULT_FEE_RATE = 0.0003
 
 # 无风险利率(用于夏普比率)

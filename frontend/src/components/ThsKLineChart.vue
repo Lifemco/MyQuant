@@ -361,5 +361,5 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="chartEl" class="h-full w-full" />
+  <div ref="chartEl" class="h-full w-full" role="img" :aria-label="`K线图，最新收盘价 ${bars[bars.length - 1]?.close ?? '暂无'}`" />
 </template>

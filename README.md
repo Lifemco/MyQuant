@@ -1,83 +1,66 @@
-# 量化工作台 (Quant Workbench)
+# 个人量化工作台 MyQuant
 
-个人量化**监控**工作台:盯自选股、按你绑定的策略发出买入/卖出提示,**不做实盘对接**——看到信号后手动下单。覆盖 **A股 / 港股 / 美股**。
+用于 A 股、港股和美股的个人行情观察、策略信号和日线回测。信号用于人工决策，交易由用户手动执行，不接实盘账户。
 
-## 功能
+## 启动
 
-| 模块 | 说明 |
-| --- | --- |
-| 自选股监控 | 左侧列表:实时价(3s 快照轮询)、涨跌幅、持仓状态、最近策略信号(悬停看说明);删除按钮悬停才显示 |
-| 行情面板 | 同花顺式:大字现价/涨跌 + 今开/昨收/最高/最低/换手率/成交额/振幅/市盈率/市净率/总市值 |
-| 分时图 | 当日分钟线 + 均价线 + 昨收虚线 + 分时量柱,3s 自动更新(A股/港股) |
-| K线图 | 日/周/月切换,红涨绿跌 + MA5/10/20/60 + 成交量 + MACD,底部带迷你走势的拖动滑动条,B/S 买卖点标记 |
-| 买卖信号提示 | 信号面板:当前持仓状态 + 最近信号(日期/触发价)+ 完整历史;T 日收盘出信号,T+1 手动执行 |
-| 策略设置与回测 | 抽屉:切换策略、调参数实时预览信号、保存绑定、一键回测(指标+净值曲线) |
-| 行情刷新 | 3s 快照轮询(价格/分时);「刷新K线/信号」按钮拉取最新K线并重算信号 |
-
-## 技术栈
-
-- **后端**: Python 3.13 (conda `quant` 环境) + FastAPI + pandas + Parquet 本地存储
-- **前端**: Vue 3 + TypeScript + Element Plus + Tailwind CSS + Pinia + ECharts
-
-## 目录结构
-
-```
-quant/
-├── start.sh              # 一键启动前后端
-├── backend/
-│   ├── app/
-│   │   ├── api/          # data / backtest / watchlist / monitor 四组路由
-│   │   ├── backtest/     # 回测引擎、指标、策略(双均线、RSI)
-│   │   ├── data/         # 腾讯(A股/港股)+ yfinance(美股)+ Parquet 存储
-│   │   ├── monitor/      # 信号计算服务
-│   │   ├── watchlist/    # 自选股 JSON 持久化
-│   │   └── schemas/      # Pydantic 模型
-│   └── tests/            # pytest(33 个用例)
-├── frontend/src/
-│   ├── views/WorkbenchView.vue      # 单页工作台
-│   ├── components/ThsKLineChart.vue # 同花顺风格K线
-│   ├── components/WatchlistPanel.vue# 左侧自选列表
-│   ├── components/SignalPanel.vue   # 底部信号面板
-│   ├── components/StrategyDrawer.vue# 策略设置/回测抽屉
-│   └── utils/indicator.ts           # MA/MACD 计算
-└── data/                 # 行情 Parquet + watchlist.json(运行时生成)
-```
-
-## 快速开始
+需要 Python 3.12/3.13、Node.js 24（或 Vite 支持的 Node 版本）。Linux/macOS 可直接使用项目虚拟环境；已有 conda `quant` 环境也可继续使用。
 
 ```bash
-# 一键启动(推荐):后端 8080(conda quant 环境)+ 前端 5173,Ctrl+C 同时停止
+python3 -m venv .venv
+.venv/bin/python -m pip install -r backend/requirements-lock.txt
+cd frontend
+npm ci
+cd ..
 ./start.sh
 ```
 
-打开 http://localhost:5173 → 左侧「+ 添加」输入代码(如 600519 / 00700 / AAPL)→ 点击股票看K线与信号 → 「策略设置 / 回测」调整策略。
+打开 http://localhost:5173 。后端文档为 http://localhost:8080/docs 。设置 `PYTHON_BIN=/path/to/python ./start.sh` 可指定解释器。Ctrl+C 会停止本次启动的前后端进程。
 
-> **网络说明**:A股/港股走腾讯行情接口直连;美股走 yfinance 需代理(自动读 `QUANT_PROXY` 或 macOS 系统代理)。腾讯接口单次上限约 640 根K线。
+## 功能
 
-## 信号口径
+- 行情监控：添加自选股（A股6位、港股5位、美股代码可含点和连字符），查看行情快照、分时、日/周/月 K 线、MA/MACD/KDJ 和买卖标记。
+- 策略设置：双均线、RSI 均值回归、S1 趋势均线、S2 放量突破。参数编辑期间明确显示“预览”，关闭抽屉恢复已保存策略。
+- 策略中心：对最多20只缓存股票执行批量回测；对单只股票的候选参数网格寻优，最多200组，按夏普排序。结果为样本内比较。
+- 刷新 K 线/信号：更新日线及已经缓存的周/月线，显示逐票失败原因和数据实际截止日期。快照与分时每3秒轮询，超过50只自选时分批请求。
 
-策略在 **T 日收盘**产生信号(图上 B/S 标记在 T 日),你 **T+1 日开盘**手动执行;
-回测引擎同样按 T+1 生效计费,保证信号与回测口径一致、无前视偏差。
+## 信号及回测口径
 
-## 内置策略
+- T 日收盘产生信号，**下一根交易日 K 线的开盘价成交**。回测使用现金与股数记账，买入费率包含在可用现金内；每笔买/卖各收一次单边手续费，默认万三。不模拟滑点、最低佣金、印花税、整手数量、停牌和涨跌停的成交限制。
+- 单笔盈亏包含买入和卖出手续费、入场日涨跌及卖出前的隔夜涨跌。期末未平仓交易按最后收盘价估值；胜率只统计已平仓交易，交易次数包含未平仓单。
+- 夏普为日超额收益均值/样本标准差乘以 `sqrt(252)`，无风险年利率2%；CAGR 单独作为年化收益。不足两个收益样本时波动与夏普返回0，避免 NaN。
+- 图表可以显示盘中 K 线；正式买卖点、目标仓位和回测只使用已确认收盘的 K 线。按交易所时区判断：A股15:00、港股16:10、美股纽约16:00之后确认。周线到周五收盘，月线到日历月末收盘之后确认。
+- 收盘确认采用**保守时间规则**，尚未集成完整交易所节假日/半日市日历。提前收市日的当天信号、遇假期提前结束的周/月线，可能延后确认；不会据此提前发出正式信号。夏令时按纽约时区自动处理。
 
-| 策略 | name | 参数 |
-| --- | --- | --- |
-| 双均线交叉 | `sma_cross` | fastWindow(默认5), slowWindow(默认20) |
-| RSI 均值回归 | `rsi_reversion` | window(默认14), oversold(默认30), overbought(默认70) |
+## 数据与缓存
 
-## 开发
+- A股/港股使用腾讯前复权行情；客户端遵循 `HTTP_PROXY` / `HTTPS_PROXY` 和系统 CA 配置。腾讯每次最多约640根 K 线。
+- 美股使用 yfinance 的调整后日线，**没有实时快照或分时支持**。界面会标记缓存收盘价及日期，需手动刷新。国内网络可按需配置 Yahoo 代理。
+- Parquet 按日期增量合并，JSON 自选清单和行情采用写锁与原子替换，避免并发丢失更新或读到半写文件。
+- 若重叠的历史价格发生复权修订，旧文件备份为 `.parquet.bak`，使用本次数据源返回的完整窗口重建，**不拼接两套复权基准**。历史可能缩短到数据源返回范围，界面显示重建提示。备份保留最近一次重建前版本，可人工恢复；无重叠历史时也采用同一保护策略。
+- 仓库内已有行情仅作为样例，不能视为当前行情；实际截止日期在页面可见。新增运行文件已加入忽略规则；仓库原有的样例行情和自选文件仍保留。
+
+## 检查
 
 ```bash
-# 后端测试(conda quant 环境)
-cd backend && $(conda info --base)/envs/quant/bin/python -m pytest tests/ -q
+# 后端
+.venv/bin/python -m pytest backend/tests/ -q
+# 或 cd backend 后执行 python -m pytest tests/ -q
 
-# 前端类型检查 + 构建 / lint
-cd frontend && npm run build && npx eslint src/
+# 前端
+cd frontend
+npm run build
+npx eslint src/ tests/ playwright.config.ts
+npx playwright install chromium
+npm run test:e2e
 ```
 
-## 新增一个策略
+若使用系统 Chromium：`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:e2e`。浏览器回归通过模拟行情接口验证，不依赖真实行情服务。CI 执行后端测试、前端构建、lint 和浏览器回归。
 
-1. 在 `backend/app/backtest/strategies/` 新建文件,继承 `Strategy` 基类
-2. 实现 `generateSignals()` 返回 0/1 持仓序列
-3. 在 `strategies/__init__.py` 注册 —— 监控信号、回测、前端参数表单全部自动生效
+## 结构与扩展
+
+后端 `backend/app/` 分为 `api`、`backtest`、`data`、`monitor`、`schemas`、`watchlist`；前端 `frontend/src/` 使用 Vue 3 + TypeScript + Element Plus + Pinia + ECharts。
+
+添加策略：继承 `Strategy`，实现按行情日期索引的0/1目标持仓序列，并在 `strategies/__init__.py` 注册及声明参数范围。服务端统一校验参数类型、边界和跨参数关系，再用于绑定、监控、回测及寻优。
+
+默认服务仅绑定本机地址，CORS 限制为本地开发页面。当前没有账户认证，面向个人本地使用。

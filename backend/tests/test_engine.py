@@ -33,6 +33,7 @@ class TestRunBacktest:
     def test_flatMarketBreaksEvenIgnoringFirstDay(self):
         # 价格不变时净值维持 1(首日后满仓但无涨跌,仅首日无仓位)
         bars = makeBars([100.0] * 20)
+        bars["open"] = bars["close"]  # 真正平价行情，避免构造器默认的1%日内收益
         result = runBacktest(bars, AlwaysLongStrategy(), feeRate=0.0)
         assert result["equityCurve"][-1]["equity"] == pytest.approx(1.0, abs=1e-3)
 

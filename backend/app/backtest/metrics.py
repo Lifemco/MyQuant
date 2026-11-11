@@ -5,7 +5,7 @@ import pandas as pd
 from app.core.config import RISK_FREE_RATE, TRADING_DAYS_PER_YEAR
 
 
-def computeMetrics(equity: pd.Series, positions: pd.Series) -> dict:
+def computeMetrics(equity: pd.Series, positions: pd.Series, trades: list[dict] | None = None) -> dict:
     """根据净值序列与持仓序列计算全部绩效指标。
 
     Args:
@@ -22,17 +22,20 @@ def computeMetrics(equity: pd.Series, positions: pd.Series) -> dict:
     totalReturn = equity.iloc[-1] / equity.iloc[0] - 1
     years = len(returns) / TRADING_DAYS_PER_YEAR
     annualReturn = (1 + totalReturn) ** (1 / years) - 1 if years > 0 else 0.0
-    annualVol = returns.std() * np.sqrt(TRADING_DAYS_PER_YEAR)
+    dailyVol = float(returns.std()) if len(returns) > 1 else 0.0
+    annualVol = dailyVol * np.sqrt(TRADING_DAYS_PER_YEAR)
     sharpe = (
-        (annualReturn - RISK_FREE_RATE) / annualVol if annualVol > 0 else 0.0
+        (returns.mean() - RISK_FREE_RATE / TRADING_DAYS_PER_YEAR)
+        / dailyVol * np.sqrt(TRADING_DAYS_PER_YEAR) if dailyVol > 0 else 0.0
     )
 
     drawdown = equity / equity.cummax() - 1
     maxDrawdown = drawdown.min()
     calmar = annualReturn / abs(maxDrawdown) if maxDrawdown < 0 else 0.0
 
-    trades = extractTrades(positions, equity)
-    winRate = float(np.mean([t["pnlPct"] > 0 for t in trades])) if trades else 0.0
+    trades = extractTrades(positions, equity) if trades is None else trades
+    closed = [t for t in trades if t["exitDate"] is not None]
+    winRate = float(np.mean([t["pnlPct"] > 0 for t in closed])) if closed else 0.0
 
     return {
         "totalReturn": round(float(totalReturn), 4),
@@ -51,9 +54,10 @@ def extractTrades(positions: pd.Series, equity: pd.Series) -> list[dict]:
     trades: list[dict] = []
     entryDate, entryEquity = None, None
     prev = 0
+    previousEquity = float(equity.iloc[0]) if len(equity) else 1.0
     for date, pos in positions.items():
         if prev == 0 and pos == 1:
-            entryDate, entryEquity = date, equity.loc[date]
+            entryDate, entryEquity = date, previousEquity
         elif prev == 1 and pos == 0 and entryDate is not None:
             exitEquity = equity.loc[date]
             trades.append(
@@ -65,6 +69,7 @@ def extractTrades(positions: pd.Series, equity: pd.Series) -> list[dict]:
             )
             entryDate, entryEquity = None, None
         prev = pos
+        previousEquity = float(equity.loc[date])
     # 期末仍持仓记为未平仓单
     if entryDate is not None:
         lastDate = positions.index[-1]

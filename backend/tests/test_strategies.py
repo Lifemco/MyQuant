@@ -18,9 +18,8 @@ class TestRegistry:
 
 class TestSmaCross:
     def test_invalidWindowRaises(self):
-        strategy = getStrategy("sma_cross", fastWindow=20, slowWindow=5)
         with pytest.raises(ValueError):
-            strategy.generateSignals(makeBars([100.0] * 30))
+            getStrategy("sma_cross", fastWindow=20, slowWindow=5)
 
     def test_strongUptrendEventuallyLong(self):
         # 稳定上涨后快线必然高于慢线
