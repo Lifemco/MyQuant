@@ -10,6 +10,7 @@ from urllib.request import getproxies
 import pandas as pd
 
 from app.data.provider import DataProvider
+from app.data.contract import describeBars
 
 
 def _ensureProxy() -> None:
@@ -58,4 +59,5 @@ class YFinanceProvider(DataProvider):
         )
         df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
         keep = ["date", "open", "high", "low", "close", "volume"]
-        return df[keep].sort_values("date").reset_index(drop=True)
+        return describeBars(df[keep], "us", symbol, period, source="yahoo",
+                            adjustment="yahoo_auto_adjust", volumeUnit="share")

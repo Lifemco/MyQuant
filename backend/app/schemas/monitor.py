@@ -45,6 +45,7 @@ class WatchOverviewItem(WatchItemOut):
     lastSignal: SignalMarker | None
     close: float | None
     changePct: float | None
+    dataInfo: dict | None = None
     dataAsOf: str | None = None
     signalAsOf: str | None = None
     error: str | None = None
@@ -70,6 +71,7 @@ class ChartResponse(BaseModel):
     holding: bool
     lastSignal: SignalMarker | None
     signalAsOf: str | None = None
+    dataInfo: dict | None = None
 
 
 class QuoteRequest(BaseModel):
@@ -100,6 +102,8 @@ class QuoteSnapshot(BaseModel):
     totalMarketCap: float | None = None
     pbRatio: float | None = None
     time: str = ""
+    source: str | None = None
+    volumeUnit: str | None = None
 
 
 class MinutePoint(BaseModel):

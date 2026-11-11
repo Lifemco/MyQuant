@@ -8,7 +8,9 @@ from app.api.data import _buildProvider
 from app.backtest.strategies import getStrategy
 from app.data.store import loadBars, saveBars
 from app.monitor.service import computeSignalMarkers, summarizeBars
-from app.monitor.session import closedBars, marketNow
+from app.monitor.session import closedBars, marketNow, ZONES
+from app.data.contract import META_KEY, describeBars, instrument
+from zoneinfo import ZoneInfo
 from app.schemas.monitor import (
     ChartRequest,
     ChartResponse,
@@ -30,7 +32,8 @@ def _overviewFor(item: dict) -> WatchOverviewItem:
     confirmed = closedBars(bars, item["market"]) if bars is not None else None
     if bars is not None and not bars.empty:
         base["dataAsOf"] = str(bars["date"].max().date())
-        base["error"] = bars.attrs.get("historyNotice")
+        base["dataInfo"] = bars.attrs.get(META_KEY)
+        base["error"] = bars.attrs.get("historyNotice") or (None if base["dataInfo"] else "旧缓存来源、复权和单位未确认；请刷新后核对")
     if confirmed is not None and not confirmed.empty:
         base["signalAsOf"] = str(confirmed["date"].max().date())
     if bars is None or bars.empty:
@@ -105,6 +108,7 @@ def chart(req: ChartRequest) -> ChartResponse:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return ChartResponse(
+        dataInfo=bars.attrs.get(META_KEY),
         signalAsOf=str(confirmed["date"].max().date()) if not confirmed.empty else None,
         bars=[
             {
@@ -174,7 +178,30 @@ def _mergeTodayBar(market: str, symbol: str, bars: pd.DataFrame) -> pd.DataFrame
         quote = fetchQuotes([symbol]).get(symbol)
         if not quote:
             return bars
-        return _mergeQuoteBar(bars, quote, marketNow(market).date())
+        metadata = bars.attrs.get(META_KEY)
+        if not metadata or metadata.get("source") != "tencent":
+            return bars  # 未知/其他来源缓存不能直接拼接腾讯快照。
+        expectedUnit = "lot100" if market == "cn" else "share"
+        if metadata.get("instrumentId") != instrument(market, symbol)["instrumentId"] or metadata.get("volumeUnit") != expectedUnit:
+            return bars
+        tradeDate = _quoteTradeDate(str(quote.get("time", "")))
+        if tradeDate is None:
+            return bars
+        if metadata.get("adjustment") != "none":
+            # 当前价只能拼到当天取得的前复权基准，且昨收必须对得上。
+            prior = bars.loc[bars["date"].dt.date < tradeDate]
+            anchorDate = datetime.fromisoformat(metadata["fetchedAt"]).astimezone(ZoneInfo(ZONES[market])).date()
+            previousClose = quote.get("prevClose")
+            if metadata.get("adjustment") != "qfq" or anchorDate != tradeDate or prior.empty or previousClose is None:
+                return bars
+            if abs(float(prior.iloc[-1]["close"]) - previousClose) > 0.011:
+                return bars
+        rawTime = str(quote.get("time", ""))
+        fmt = "%Y%m%d%H%M%S" if rawTime[:14].isdigit() else "%Y/%m/%d %H:%M:%S"
+        observed = datetime.strptime(rawTime, fmt).replace(tzinfo=ZoneInfo(ZONES[market]))
+        merged = _mergeQuoteBar(bars, quote, marketNow(market).date())
+        return describeBars(merged, market, symbol, "day", source="tencent",
+                            adjustment=metadata["adjustment"], volumeUnit=expectedUnit, observedAt=observed)
     except Exception:
         return bars
 

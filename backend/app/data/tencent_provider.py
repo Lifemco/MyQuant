@@ -9,6 +9,8 @@ import httpx
 import pandas as pd
 
 from app.data.provider import DataProvider
+from app.data.contract import describeBars
+from app.core.validation import cnFullCode
 
 TENCENT_KLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
 TENCENT_MINUTE_URL = "https://web.ifzq.gtimg.cn/appstock/app/minute/query"
@@ -39,7 +41,7 @@ class TencentProvider(DataProvider):
         self.market = market
 
     def _fullCode(self, symbol: str) -> str:
-        return f"hk{symbol}" if self.market == "hk" else f"{_inferCnPrefix(symbol)}{symbol}"
+        return f"hk{symbol}" if self.market == "hk" else cnFullCode(symbol)
 
     def fetchDailyBars(
         self, symbol: str, startDate: str, endDate: str, period: str = "day"
@@ -61,7 +63,9 @@ class TencentProvider(DataProvider):
         node = payload.get("data", {}).get(code, {})
         # 前复权键为 qfqday/qfqweek/qfqmonth,无复权数据时退化为 day/week/month
         rows = node.get(f"qfq{period}") or node.get(period) or []
-        return self._normalizeBars(rows)
+        return describeBars(self._normalizeBars(rows), self.market, symbol, period,
+                            source="tencent", adjustment="qfq" if node.get(f"qfq{period}") else "none",
+                            volumeUnit="lot100" if self.market == "cn" else "share")
 
     @staticmethod
     def _normalizeBars(rows: list) -> pd.DataFrame:
@@ -83,7 +87,7 @@ class TencentProvider(DataProvider):
         df["date"] = pd.to_datetime(df["date"])
         for col in ("open", "high", "low", "close", "volume"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        return df.dropna(subset=["close"]).sort_values("date").reset_index(drop=True)
+        return df.sort_values("date").reset_index(drop=True)
 
     def fetchMinute(self, symbol: str) -> dict:
         """当日分时数据:每分钟 {time, price, avg, volume},附昨收。
@@ -173,12 +177,16 @@ class TencentProvider(DataProvider):
             resp.raise_for_status()
         text = resp.content.decode("gbk", errors="ignore")
         result: dict[str, dict] = {}
-        for code, block in zip(codes, text.strip().split(";")):
+        requested = dict(zip(codes, symbols))
+        for block in text.strip().split(";"):
             if "=" not in block:
                 continue
             fields = block.split("=", 1)[1].strip().strip('"').split("~")
-            rawCode = fields[2] if len(fields) > 2 else code
-            result[rawCode] = self._parseQuoteFields(fields)
+            code = block.split("=", 1)[0].strip().removeprefix("v_")
+            if code not in requested or len(fields) < 4 or fields[2] != code[2:]:
+                continue
+            result[requested[code]] = {**self._parseQuoteFields(fields), "source": "tencent",
+                                      "volumeUnit": "lot100" if self.market == "cn" else "share"}
         return result
 
     @staticmethod

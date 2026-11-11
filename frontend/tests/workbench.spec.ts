@@ -20,6 +20,7 @@ async function mockWorkbench(page: Page, count = 2) {
     signalAsOf: '2026-09-29',
   }))
   const state = {
+    legacyMetadata: false,
     delayA: false,
     delayStrategies: false,
     failChart: false,
@@ -96,6 +97,24 @@ async function mockWorkbench(page: Page, count = 2) {
       const marker = { date: '2026-09-29', type: 'buy', price: close + req.params.fastWindow }
       return route.fulfill({
         json: {
+          dataInfo: state.legacyMetadata
+            ? null
+            : {
+                source: 'tencent',
+                market: 'cn',
+                symbol: req.symbol,
+                period: req.period,
+                instrumentId: `cn:${req.symbol === '600519' ? 'sh600519' : 'sz000001'}`,
+                instrumentType: 'stock',
+                adjustment: 'qfq',
+                volumeUnit: 'lot100',
+                currency: 'CNY',
+                priceUnit: 'currency',
+                timezone: 'Asia/Shanghai',
+                fetchedAt: '2026-09-30T10:00:00+08:00',
+                observedAt: '2026-09-30T10:00:00+08:00',
+                confirmedThrough: '2026-09-29',
+              },
           bars: [
             {
               date: marker.date,
@@ -197,4 +216,16 @@ test('closing while strategy metadata loads cannot start a hidden preview', asyn
   await page.waitForTimeout(550)
   await expect(page.getByText('策略预览（未保存）')).toHaveCount(0)
   await expect(page.getByText('@ ¥105', { exact: true })).toBeVisible()
+})
+
+test('K-line source adjustment and native units are shown without guessing legacy data', async ({
+  page,
+}) => {
+  const state = await mockWorkbench(page)
+  await expect(page.getByTestId('data-convention')).toHaveText('K线：腾讯 · 前复权 · 成交量手')
+  state.legacyMetadata = true
+  await page.getByRole('button', { name: '周线', exact: true }).click()
+  await expect(page.getByTestId('data-convention')).toHaveText(
+    'K线来源、复权与单位未确认，请刷新后核对',
+  )
 })

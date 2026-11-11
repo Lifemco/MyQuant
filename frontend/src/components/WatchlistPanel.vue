@@ -23,7 +23,7 @@ import type { Market } from '@/types'
 const store = useWatchlistStore()
 
 const MARKET_OPTIONS: { value: Market; label: string; placeholder: string }[] = [
-  { value: 'cn', label: 'A股', placeholder: '如 600519' },
+  { value: 'cn', label: 'A股', placeholder: '股票600519；上证指数sh000001' },
   { value: 'hk', label: '港股', placeholder: '如 00700' },
   { value: 'us', label: '美股', placeholder: '如 AAPL' },
 ]

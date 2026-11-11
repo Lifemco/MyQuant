@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import type { QuoteSnapshot, WatchOverviewItem } from '@/types'
+import type { MarketDataInfo, QuoteSnapshot, WatchOverviewItem } from '@/types'
 
 /** 同花顺式行情面板:大字价格 + 涨跌 + 完整行情字段网格 */
 const props = defineProps<{
   item: WatchOverviewItem
   quote: QuoteSnapshot | null
+  dataInfo?: MarketDataInfo | null
 }>()
 
 /** 现价/涨跌幅优先取实时快照,快照缺失回落到K线收盘 */
@@ -16,6 +17,27 @@ const change = computed(() => {
   if (props.quote?.change !== null && props.quote?.change !== undefined) return props.quote.change
   if (price.value !== null && props.quote?.prevClose) return price.value - props.quote.prevClose
   return null
+})
+
+const info = computed(() => props.dataInfo ?? props.item.dataInfo)
+const volumeUnit = computed(() =>
+  props.quote?.volumeUnit === 'lot100'
+    ? '手'
+    : props.quote?.volumeUnit === 'share'
+      ? '股'
+      : '单位未知',
+)
+const dataDescription = computed(() => {
+  const data = info.value
+  if (!data) return 'K线来源、复权与单位未确认，请刷新后核对'
+  const sources: Record<string, string> = { tencent: '腾讯', yahoo: 'Yahoo' }
+  const adjustments: Record<string, string> = {
+    none: '不复权',
+    qfq: '前复权',
+    hfq: '后复权',
+    yahoo_auto_adjust: 'Yahoo调整价',
+  }
+  return `K线：${sources[data.source] ?? data.source} · ${adjustments[data.adjustment]} · 成交量${data.volumeUnit === 'lot100' ? '手' : '股'}${data.priceUnit === 'point' ? ' · 价格为指数点位' : ''}`
 })
 
 const isUp = computed(() => (changePct.value ?? 0) >= 0)
@@ -34,7 +56,7 @@ function fmtAmount(v: number | null | undefined): string {
 
 function fmtVolume(v: number | null | undefined): string {
   if (v === null || v === undefined) return '--'
-  // A股快照单位为手,港股为股,这里按通用大数格式化
+  // 数值保留原单位，单位由提供器明确声明后显示。
   if (v >= 1e8) return `${(v / 1e8).toFixed(2)}亿`
   if (v >= 1e4) return `${(v / 1e4).toFixed(1)}万`
   return String(v)
@@ -51,7 +73,7 @@ const fields = computed(() => [
     value: props.quote?.turnoverRate != null ? `${fmt(props.quote.turnoverRate)}%` : '--',
     trend: '',
   },
-  { label: '成交量', value: fmtVolume(props.quote?.volume), trend: '' },
+  { label: `成交量(${volumeUnit.value})`, value: fmtVolume(props.quote?.volume), trend: '' },
   { label: '成交额', value: fmtAmount(props.quote?.amount), trend: '' },
   {
     label: '振幅',
@@ -127,6 +149,7 @@ function compareWith(v: number | null | undefined): string {
               : `缓存收盘价 · ${item.dataAsOf ?? '日期未知'}`
           }}
           <span v-if="item.market === 'us'">（美股仅日线，手动刷新）</span>
+          <div data-testid="data-convention">{{ dataDescription }}</div>
           <div v-if="item.refreshError || item.error" class="text-amber-600">
             {{ item.refreshError || item.error }}
           </div>

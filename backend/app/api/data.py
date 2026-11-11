@@ -30,6 +30,7 @@ def fetchBars(req: FetchBarsRequest) -> FetchBarsResponse:
         market=req.market,
         symbol=req.symbol,
         rows=len(df),
+        dataInfo=df.attrs.get("marketData"),
         startDate=str(df["date"].min().date()),
         endDate=str(df["date"].max().date()),
     )

@@ -1,3 +1,18 @@
+/** 行情口径随数据保存；未知旧缓存不猜测来源或单位。 */
+export interface MarketDataInfo {
+  source: string
+  instrumentId: string
+  instrumentType: 'stock' | 'index'
+  adjustment: 'none' | 'qfq' | 'hfq' | 'yahoo_auto_adjust'
+  volumeUnit: 'share' | 'lot100'
+  currency: string
+  priceUnit: 'point' | 'currency'
+  timezone: string
+  fetchedAt: string
+  observedAt: string
+  confirmedThrough: string | null
+}
+
 /** 市场代码 */
 export type Market = 'cn' | 'hk' | 'us'
 
@@ -108,6 +123,7 @@ export interface SignalMarker {
 
 /** 自选列表行:条目 + 实时状态 */
 export interface WatchOverviewItem extends WatchItem {
+  dataInfo?: MarketDataInfo | null
   dataAsOf?: string | null
   signalAsOf?: string | null
   error?: string | null
@@ -121,6 +137,7 @@ export interface WatchOverviewItem extends WatchItem {
 
 /** K线 + 信号图数据 */
 export interface ChartData {
+  dataInfo?: MarketDataInfo | null
   signalAsOf?: string | null
   bars: BarPoint[]
   markers: SignalMarker[]
@@ -142,6 +159,8 @@ export type Period = 'day' | 'week' | 'month'
 
 /** 行情快照(同花顺行情面板) */
 export interface QuoteSnapshot {
+  source?: string | null
+  volumeUnit?: 'share' | 'lot100' | null
   market: string
   symbol: string
   name: string

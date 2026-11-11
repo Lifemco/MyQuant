@@ -32,6 +32,7 @@ class FetchBarsResponse(BaseModel):
     market: str
     symbol: str
     rows: int
+    dataInfo: dict | None = None
     startDate: str | None
     endDate: str | None
 
@@ -40,6 +41,7 @@ class SymbolInfo(BaseModel):
     market: str
     symbol: str
     rows: int
+    dataInfo: dict | None = None
     startDate: str | None
     endDate: str | None
 

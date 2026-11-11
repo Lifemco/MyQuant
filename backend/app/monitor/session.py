@@ -16,6 +16,11 @@ def marketNow(market: str) -> datetime:
 
 def closedBars(bars: pd.DataFrame, market: str, period: str = "day", now: datetime | None = None) -> pd.DataFrame:
     current = (now or marketNow(market)).astimezone(ZoneInfo(ZONES[market]))
+    metadata = bars.attrs.get("marketData")
+    if metadata:
+        # 采集于盘中的K线不会因服务器时钟走到晚上就自动变成收盘数据。
+        observed = datetime.fromisoformat(metadata["observedAt"])
+        current = min(current, observed.astimezone(ZoneInfo(ZONES[market])))
     def closed(value):
         end = pd.Timestamp(value).date()
         if period == "week":
@@ -23,4 +28,10 @@ def closedBars(bars: pd.DataFrame, market: str, period: str = "day", now: dateti
         elif period == "month":
             end = end.replace(day=monthrange(end.year, end.month)[1])
         return end < current.date() or (end == current.date() and current.time() >= CLOSES[market])
-    return bars.loc[bars["date"].map(closed)].copy()
+    mask = bars["date"].map(closed)
+    if metadata:
+        cutoff = metadata.get("confirmedThrough")
+        if cutoff is None:
+            return bars.iloc[:0].copy()
+        mask &= bars["date"] <= pd.Timestamp(cutoff)
+    return bars.loc[mask].copy()

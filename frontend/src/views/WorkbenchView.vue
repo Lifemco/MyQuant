@@ -232,7 +232,11 @@ onBeforeUnmount(() => {
           <!-- 同花顺式行情面板 -->
           <div class="flex shrink-0 items-stretch gap-2">
             <div class="min-w-0 flex-1">
-              <QuoteHeader :item="selected" :quote="store.selectedQuote" />
+              <QuoteHeader
+                :item="selected"
+                :quote="store.selectedQuote"
+                :data-info="chartData?.dataInfo ?? signalData?.dataInfo"
+              />
             </div>
             <div class="flex items-center rounded-lg border border-gray-200 bg-white px-3">
               <ElButton size="small" @click="drawerVisible = true">
@@ -290,6 +294,11 @@ onBeforeUnmount(() => {
               :markers="signalData.markers"
               :holding="signalData.holding"
               :last-signal="signalData.lastSignal"
+              :price-unit="signalData.dataInfo?.priceUnit"
+              :currency="
+                signalData.dataInfo?.currency ??
+                { cn: 'CNY', hk: 'HKD', us: 'USD' }[selected.market]
+              "
               :height="SIGNAL_PANEL_HEIGHT"
             />
           </ElCard>

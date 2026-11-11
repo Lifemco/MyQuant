@@ -8,6 +8,8 @@ const props = defineProps<{
   markers: SignalMarker[]
   holding: boolean
   lastSignal: SignalMarker | null
+  priceUnit?: string
+  currency?: string
   /** 面板整体高度(px),由父级拖拽控制 */
   height?: number
 }>()
@@ -27,8 +29,13 @@ function typeLabel(row: unknown): string {
   return (row as SignalMarker).type === 'buy' ? '买入' : '卖出'
 }
 
+function formatPrice(price: number): string {
+  if (props.priceUnit === 'point') return `${price}点`
+  const prefix = props.currency === 'USD' ? '$' : props.currency === 'HKD' ? 'HK$' : '¥'
+  return `${prefix}${price}`
+}
 function fmtPrice(row: unknown): string {
-  return `¥${(row as SignalMarker).price.toFixed(2)}`
+  return formatPrice((row as SignalMarker).price)
 }
 </script>
 
@@ -50,7 +57,7 @@ function fmtPrice(row: unknown): string {
           {{ lastSignal.type === 'buy' ? '买入' : '卖出' }}
         </ElTag>
         <div class="mt-1 text-gray-500">{{ lastSignal.date }}</div>
-        <div class="text-gray-500">@ ¥{{ lastSignal.price }}</div>
+        <div class="text-gray-500">@ {{ formatPrice(lastSignal.price) }}</div>
       </div>
       <div v-else class="text-xs text-gray-400">暂无信号</div>
     </div>
