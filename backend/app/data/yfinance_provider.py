@@ -36,9 +36,14 @@ class YFinanceProvider(DataProvider):
         import yfinance as yf
 
         interval = self._PERIOD_INTERVAL.get(period, "1d")
-        raw = yf.download(
-            symbol, start=startDate, end=(date.fromisoformat(endDate) + timedelta(days=1)).isoformat(), interval=interval,
-            auto_adjust=True, progress=False,
+        # download()会吞掉网络异常并返回空表，进而被API误报为“无行情”。
+        # 单标的history显式抛错，让API保留上游失败的502语义。
+        raw = yf.Ticker(symbol).history(
+            start=startDate,
+            end=(date.fromisoformat(endDate) + timedelta(days=1)).isoformat(),
+            interval=interval,
+            auto_adjust=True,
+            raise_errors=True,
         )
         if raw.empty:
             return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])

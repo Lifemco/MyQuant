@@ -221,9 +221,25 @@ def test_yahoo_end_date_is_inclusive(monkeypatch):
     from types import SimpleNamespace
     from app.data.yfinance_provider import YFinanceProvider
     calls=[]
-    def download(*args,**kwargs):
+    def history(**kwargs):
         calls.append(kwargs)
         return pd.DataFrame()
-    monkeypatch.setitem(sys.modules,'yfinance',SimpleNamespace(download=download))
+    monkeypatch.setitem(sys.modules,'yfinance',SimpleNamespace(Ticker=lambda symbol:SimpleNamespace(history=history)))
     YFinanceProvider().fetchDailyBars('AAPL','2026-09-01','2026-09-30')
     assert calls[0]['end']=='2026-10-01'
+    assert calls[0]['raise_errors'] is True
+
+
+def test_yahoo_network_failure_returns_502_instead_of_no_data_404(tmp_path,monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    import httpx
+    import app.data.store as store
+    def history(**kwargs):
+        raise httpx.ProxyError('403 Forbidden')
+    monkeypatch.setitem(sys.modules,'yfinance',SimpleNamespace(Ticker=lambda symbol:SimpleNamespace(history=history)))
+    monkeypatch.setattr(store,'DATA_DIR',tmp_path)
+    response=client.post('/api/data/fetch',json={'market':'us','symbol':'AAPL','startDate':'2026-10-01','endDate':'2026-11-10'})
+    assert response.status_code==502
+    assert '403 Forbidden' in response.json()['detail']
+    assert list(tmp_path.rglob('*.parquet'))==[]
