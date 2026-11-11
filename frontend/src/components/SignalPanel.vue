@@ -1,0 +1,74 @@
+<script setup lang="ts">
+import { ElTable, ElTableColumn, ElTag } from 'element-plus'
+import { computed } from 'vue'
+
+import type { SignalMarker } from '@/types'
+
+const props = defineProps<{
+  markers: SignalMarker[]
+  holding: boolean
+  lastSignal: SignalMarker | null
+  /** 面板整体高度(px),由父级拖拽控制 */
+  height?: number
+}>()
+
+/** 历史信号倒序展示(最新在前) */
+const history = computed(() => [...props.markers].reverse())
+
+/** 表格高度 = 面板高度 - 卡片边框与内边距 */
+const tableHeight = computed(() => Math.max(60, (props.height ?? 150) - 20))
+
+/** 表格行辅助:ElTable 插槽行类型宽松,断言收敛在 script 内 */
+function tagType(row: unknown): 'danger' | 'success' {
+  return (row as SignalMarker).type === 'buy' ? 'danger' : 'success'
+}
+
+function typeLabel(row: unknown): string {
+  return (row as SignalMarker).type === 'buy' ? '买入' : '卖出'
+}
+
+function fmtPrice(row: unknown): string {
+  return `¥${(row as SignalMarker).price.toFixed(2)}`
+}
+</script>
+
+<template>
+  <!-- 高度跟随面板:状态卡拉伸,历史表高度自适应 -->
+  <div class="flex h-full items-stretch gap-3">
+    <div
+      class="flex h-full w-56 shrink-0 items-center justify-between rounded border px-3"
+      :class="holding ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'"
+    >
+      <div>
+        <div class="text-xs text-gray-500">策略信号·日线(T+1执行)</div>
+        <div class="mt-0.5 text-xl font-bold" :class="holding ? 'text-red-500' : 'text-gray-500'">
+          {{ holding ? '持仓中' : '空仓等待' }}
+        </div>
+      </div>
+      <div v-if="lastSignal" class="text-right text-xs">
+        <ElTag :type="lastSignal.type === 'buy' ? 'danger' : 'success'" size="small" effect="dark">
+          {{ lastSignal.type === 'buy' ? '买入' : '卖出' }}
+        </ElTag>
+        <div class="mt-1 text-gray-500">{{ lastSignal.date }}</div>
+        <div class="text-gray-500">@ ¥{{ lastSignal.price }}</div>
+      </div>
+      <div v-else class="text-xs text-gray-400">暂无信号</div>
+    </div>
+
+    <div class="min-w-0 flex-1">
+      <ElTable :data="history" size="small" :height="tableHeight" empty-text="暂无信号">
+        <ElTableColumn prop="date" label="日期" width="120" />
+        <ElTableColumn label="操作" width="80">
+          <template #default="{ row }">
+            <ElTag :type="tagType(row)" size="small" effect="dark">
+              {{ typeLabel(row) }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="触发价">
+          <template #default="{ row }">{{ fmtPrice(row) }}</template>
+        </ElTableColumn>
+      </ElTable>
+    </div>
+  </div>
+</template>

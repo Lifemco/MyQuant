@@ -1,0 +1,32 @@
+[
+  {
+    "market": "cn",
+    "symbol": "300580",
+    "name": "贝斯特",
+    "strategy": "sma_cross",
+    "params": {
+      "fastWindow": 5,
+      "slowWindow": 20
+    }
+  },
+  {
+    "market": "cn",
+    "symbol": "300666",
+    "name": "江丰电子",
+    "strategy": "sma_cross",
+    "params": {
+      "fastWindow": 5,
+      "slowWindow": 20
+    }
+  },
+  {
+    "market": "cn",
+    "symbol": "601615",
+    "name": "明阳智能",
+    "strategy": "sma_cross",
+    "params": {
+      "fastWindow": 5,
+      "slowWindow": 20
+    }
+  }
+]

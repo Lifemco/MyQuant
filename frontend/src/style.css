@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 全局基础样式:不锁高,页面整体文档流滚动 */
+html,
+body,
+#app {
+  margin: 0;
+}
