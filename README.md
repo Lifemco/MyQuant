@@ -19,6 +19,7 @@ cd ..
 
 ## 功能
 
+- 市场总览：六张A股图表覆盖大盘走势与成交额、行业热力、全市场涨跌分布、MA20/MA60市场宽度、规模/价值成长风格和沪深300估值历史分位。每图显示来源、行情日期、抓取时间与覆盖口径，支持后台采集和独立缓存。
 - 行情监控：添加自选股（A股6位、港股5位、美股代码可含点和连字符），查看行情快照、分时、日/周/月 K 线、MA/MACD/KDJ 和买卖标记。
 - 策略设置：双均线、RSI 均值回归、S1 趋势均线、S2 放量突破。参数编辑期间明确显示“预览”，关闭抽屉恢复已保存策略。
 - 策略中心：对最多20只缓存股票执行批量回测；对单只股票的候选参数网格寻优，最多200组，按夏普排序。结果为样本内比较。
@@ -59,7 +60,7 @@ npm run test:e2e
 
 ## 结构与扩展
 
-后端 `backend/app/` 分为 `api`、`backtest`、`data`、`monitor`、`schemas`、`watchlist`；前端 `frontend/src/` 使用 Vue 3 + TypeScript + Element Plus + Pinia + ECharts。
+后端 `backend/app/` 分为 `api`、`backtest`、`data`、`market`、`monitor`、`schemas`、`watchlist`；前端 `frontend/src/` 使用 Vue 3 + TypeScript + Element Plus + Pinia + ECharts。
 
 添加策略：继承 `Strategy`，实现按行情日期索引的0/1目标持仓序列，并在 `strategies/__init__.py` 注册及声明参数范围。服务端统一校验参数类型、边界和跨参数关系，再用于绑定、监控、回测及寻优。
 
@@ -78,3 +79,9 @@ npm run test:e2e
 已接入AKShare和BaoStock历史下载。在 **策略中心 → 行情下载** 选择来源、日期与复权方式即可下载CSV/JSON。API为 `GET /api/data/providers` 和 `POST /api/data/download`，带有来源和口径信息。
 
 安装新增SDK请重新执行 `pip install -r backend/requirements-lock.txt`。能力范围、缓存切换、配置修改及网络限制见 [第三方接口说明](docs/third-party-interfaces.md)。
+
+## 市场总览
+
+打开导航中的 **市场总览**（`/market`），点击 **刷新市场数据**。六图所需第三方配置与调用仍统一在 `backend/app/data/third_party.py` 的 `MARKET_OVERVIEW` 区域。数据缺失时展示空态，失败时保留并标记旧缓存，不使用自选股替代全市场。
+
+MA20/MA60图需先刷新证券名单，再点击 **构建 / 更新全市场宽度**。首次会逐只下载沪深A股历史，耗时较长；采集在后台执行，显示进度、失败数量与实际分母，同一目标日可复用成功缓存。当前使用最新名单回溯，存在幸存者偏差，不作为历史时点完整股票池。详细口径及验证见 [市场总览说明](docs/market-overview.md)。

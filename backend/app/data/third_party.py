@@ -86,6 +86,98 @@ class DataSourceRequestError(ValueError):
 
 _akLock = RLock()
 
+# 市场总览专用接口；SDK内部HTTP地址仍由AKShare维护。
+MARKET_OVERVIEW = {
+    "sdk": "akshare", "timeout": 15,
+    "calls": {
+        "spot": {"method": "stock_zh_a_spot_em", "source": "东方财富 / AKShare",
+                 "columns": {"代码": "symbol", "涨跌幅": "change", "成交额": "amount", "最新价": "close"}},
+        "industry": {"method": "stock_board_industry_name_em", "source": "东方财富 / AKShare",
+                     "columns": {"板块代码": "symbol", "板块名称": "name", "涨跌幅": "change", "总市值": "size"}},
+        "index": {"method": "index_zh_a_hist", "source": "东方财富 / AKShare",
+                  "params": {"period": "daily"}, "paramMap": {"symbol": "symbol", "startDate": "start_date", "endDate": "end_date"},
+                  "columns": {"日期": "date", "收盘": "close", "成交额": "amount"}},
+        "valuation": {"method": "stock_index_pe_lg", "params": {"symbol": "沪深300"}, "source": "乐咕乐股 / AKShare",
+                      "isolated": True, "requestTimeout": 60,
+                      "columns": {"日期": "date", "滚动市盈率": "pe"}},
+    },
+    "indices": {"000001": "上证指数", "399001": "深证成指", "399006": "创业板指",
+                "000300": "沪深300", "000905": "中证500", "000852": "中证1000",
+                "000918": "沪深300成长", "000919": "沪深300价值"},
+    "trendIndices": ["000001", "399001", "399006", "000300"],
+    "styleIndices": ["000300", "000905", "000852", "000918", "000919"],
+    "breadth": {"provider": "akshare", "adjustment": "qfq", "source": "东方财富 / AKShare"},
+    "networkHosts": ["82.push2.eastmoney.com", "17.push2.eastmoney.com", "push2his.eastmoney.com",
+                     "legulegu.com", "www.legulegu.com"],
+}
+
+
+def marketOverviewRequest(operation: str, **params) -> pd.DataFrame:
+    """总览第三方调用的唯一入口，返回标准字段，不在页面或统计层写SDK/地址。"""
+    if MARKET_OVERVIEW["calls"][operation].get("isolated"):
+        return _isolatedMarketRequest(operation, params)
+    return _marketOverviewDirect(MARKET_OVERVIEW, operation, params)
+
+
+def _marketOverviewDirect(settings: dict, operation: str, params: dict) -> pd.DataFrame:
+    call = settings["calls"][operation]
+    if operation == "index":
+        params = {call["paramMap"][key]: value.replace("-", "") for key, value in params.items()}
+    sdk = importlib.import_module(settings["sdk"])
+    with _akLock:
+        previous = sdk.get_timeout()
+        try:
+            sdk.set_timeout(settings["timeout"])
+            frame = getattr(sdk, call["method"])(**{**call.get("params", {}), **params})
+        finally:
+            sdk.set_timeout(previous)
+    if frame is None or frame.empty:
+        raise ValueError("上游未返回有效数据")
+    missing = set(call["columns"]) - set(frame.columns)
+    if missing:
+        raise ValueError("上游字段发生变化")
+    return frame.rename(columns=call["columns"])[list(call["columns"].values())].copy()
+
+
+def _marketWorker(connection, settings, operation, params):
+    # 部分估值SDK依赖JS运行时；隔离并清理，避免其退出钩子阻塞服务关闭。
+    try:
+        with redirect_stdout(io.StringIO()):
+            frame = _marketOverviewDirect(settings, operation, params)
+        connection.send((True, frame))
+    except Exception as exc:
+        connection.send((False, type(exc).__name__))
+    finally:
+        connection.close()
+
+
+def _isolatedMarketRequest(operation: str, params: dict) -> pd.DataFrame:
+    context = multiprocessing.get_context("spawn")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(target=_marketWorker, args=(sender, MARKET_OVERVIEW, operation, params))
+    try:
+        process.start()
+        sender.close()
+        if not receiver.poll(MARKET_OVERVIEW["calls"][operation]["requestTimeout"]):
+            raise TimeoutError("市场数据采集超时")
+        try:
+            success, payload = receiver.recv()
+        except EOFError as exc:
+            raise RuntimeError("市场数据进程异常退出") from exc
+        if not success:
+            raise RuntimeError(f"上游采集失败（{payload}）")
+        return payload
+    finally:
+        receiver.close()
+        sender.close()
+        if process.pid is not None:
+            if process.is_alive():
+                process.terminate()
+            process.join(timeout=2)
+            if process.is_alive():
+                process.kill()
+                process.join()
+
 
 def providerSettings(name: str) -> dict:
     if name not in PROVIDERS:

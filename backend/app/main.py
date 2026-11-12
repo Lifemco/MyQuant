@@ -3,7 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import backtest, data, monitor, watchlist
+from app.api import backtest, data, market, monitor, watchlist
 
 app = FastAPI(title="Quant Workbench", version="0.1.0")
 
@@ -19,6 +19,7 @@ app.include_router(data.router)
 app.include_router(backtest.router)
 app.include_router(watchlist.router)
 app.include_router(monitor.router)
+app.include_router(market.router)
 
 
 @app.exception_handler(ValueError)

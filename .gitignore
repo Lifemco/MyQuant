@@ -18,3 +18,4 @@ data/**/*.parquet
 data/watchlist.json
 data/**/*.lock
 data/**/*.bak
+data/market/

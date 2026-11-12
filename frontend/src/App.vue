@@ -9,14 +9,36 @@ const route = useRoute()
   <ElContainer class="flex-col">
     <!-- 全局导航栏 -->
     <div class="sticky top-0 z-20 border-b border-gray-200 bg-white">
-      <ElMenu mode="horizontal" :default-active="route.path" router :ellipsis="false" class="px-2">
-        <div class="mr-6 flex items-center">
+      <ElMenu
+        mode="horizontal"
+        :default-active="route.path"
+        router
+        :ellipsis="false"
+        class="px-2 workbench-navigation"
+      >
+        <div class="mr-6 flex items-center workbench-brand">
           <span class="text-base font-bold text-gray-800">量化工作台</span>
         </div>
         <ElMenuItem index="/">行情监控</ElMenuItem>
+        <ElMenuItem index="/market">市场总览</ElMenuItem>
         <ElMenuItem index="/strategies">策略中心</ElMenuItem>
       </ElMenu>
     </div>
     <RouterView />
   </ElContainer>
 </template>
+
+<style scoped>
+@media (max-width: 480px) {
+  .workbench-brand {
+    margin-right: 8px;
+  }
+  .workbench-brand span {
+    font-size: 14px;
+  }
+  .workbench-navigation :deep(.el-menu-item) {
+    padding: 0 10px;
+    font-size: 13px;
+  }
+}
+</style>

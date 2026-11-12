@@ -14,6 +14,7 @@
 | 腾讯字段位置、涨跌幅/金额倍率、编码 | `barFields/quoteFields/quoteScales/encoding/minuteFields` |
 | Yahoo SDK入口、周期、返回字段、超时 | `PROVIDERS['yahoo']` 及 `yahooHistory` |
 | AKShare函数名、参数名、字段名和底层来源 | `PROVIDERS['akshare']` 的 `methods/params/columns/source` |
+| 市场总览快照、行业、指数、估值接口及指数清单 | `MARKET_OVERVIEW` 的 `calls/indices/trendIndices/styleIndices` 和 `marketOverviewRequest` |
 | BaoStock主机、端口、超时、登录/查询/退出、字段及复权标志 | `PROVIDERS['baostock']` 及 `runBaostock` |
 | 更换代理来源或增加鉴权参数 | 对应的集中调用函数；私密值应从环境变量读取 |
 
@@ -74,6 +75,8 @@ BaoStock使用TCP而非HTTP。主机、端口实际写入独立数据进程的SD
 
 ## 自动验证
 
-133项后端测试及11项浏览器回归通过，前端构建、lint与依赖完整性检查通过。覆盖配置修改生效、SDK调用及复权映射、登录/退出清理、超时进程回收、下载文件内容、错误反馈和显式备份切换。
+151项后端测试及16项浏览器回归通过，前端构建、lint与依赖完整性检查通过。覆盖配置修改生效、SDK调用及复权映射、登录/退出清理、超时进程回收、下载文件内容、错误反馈和显式备份切换。
 
 当前只有腾讯适配报价和分时；AKShare、BaoStock和Yahoo适配历史行情。`operations`声明能力，不能把仅有历史下载的适配器配置成实时推送来源。
+
+市场总览另有独立的AKShare快照、行业与估值采集入口，详见 [市场总览说明](market-overview.md)，不会改变原行情监控的默认源。估值SDK的JS运行时使用独立子进程，总请求超时与退出回收在本文件管理。
