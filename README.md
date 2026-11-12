@@ -19,6 +19,8 @@ cd ..
 
 ## 功能
 
+- 左侧导航：桌面可折叠，手机保持左侧窄栏；新版K线采用主图优先、MACD/KDJ切换、近期窗口、长按十字线、缩放复位及全屏交互，见 [K线使用说明](docs/kline-interaction.md)。
+- 策略工作室：大白话策略Agent（可配置OpenAI兼容服务）、AND/OR条件编辑、外部财务/情绪/事件因子、风控、版本保存和回测/最新信号，见 [策略工作室](docs/strategy-studio.md)。
 - 市场总览：六张A股图表覆盖大盘走势与成交额、行业热力、全市场涨跌分布、MA20/MA60市场宽度、规模/价值成长风格和沪深300估值历史分位。每图显示来源、行情日期、抓取时间与覆盖口径，支持后台采集和独立缓存。
 - 行情监控：添加自选股（A股6位、港股5位、美股代码可含点和连字符），查看行情快照、分时、日/周/月 K 线、MA/MACD/KDJ 和买卖标记。
 - 策略设置：双均线、RSI 均值回归、S1 趋势均线、S2 放量突破。参数编辑期间明确显示“预览”，关闭抽屉恢复已保存策略。
@@ -62,9 +64,11 @@ npm run test:e2e
 
 后端 `backend/app/` 分为 `api`、`backtest`、`data`、`market`、`monitor`、`schemas`、`watchlist`；前端 `frontend/src/` 使用 Vue 3 + TypeScript + Element Plus + Pinia + ECharts。
 
+新增 `backend/app/strategies/` 提供可编辑规则和时点因子。Vue与Python各有独立Dockerfile，生产通过Nginx `/api`代理连接；完整K8s部署清单、环境配置及单后端持久化边界见 [云上部署说明](docs/cloud-deployment.md)。此清单尚未连接你的集群执行部署。
+
 添加策略：继承 `Strategy`，实现按行情日期索引的0/1目标持仓序列，并在 `strategies/__init__.py` 注册及声明参数范围。服务端统一校验参数类型、边界和跨参数关系，再用于绑定、监控、回测及寻优。
 
-默认服务仅绑定本机地址，CORS 限制为本地开发页面。当前没有账户认证，面向个人本地使用。
+本地启动脚本仅绑定本机地址，默认CORS允许本地开发页面；生产容器监听8080，通过Nginx同源代理及K8s ClusterIP连接。当前没有账户认证，对外访问需由部署方的鉴权网关保护。
 
 ## 行情口径校验
 

@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { httpClient, extractErrorMessage } from '@/api/client'
 import { listStrategies, runBatchBacktest, runOptimize } from '@/api/backtest'
 import DataDownloadCard from '@/components/DataDownloadCard.vue'
+import StrategyStudio from '@/components/StrategyStudio.vue'
 import type { BatchResultItem, OptimizeResultItem, StrategyMeta, SymbolInfo } from '@/types'
 
 const strategies = ref<StrategyMeta[]>([])
@@ -92,11 +93,13 @@ function percent(value?: number): string {
 </script>
 
 <template>
-  <main class="mx-auto w-full max-w-5xl space-y-4 p-6">
+  <main class="strategy-page mx-auto w-full max-w-7xl space-y-4 p-6">
     <h1 class="text-xl font-bold">策略中心</h1>
     <p class="text-sm text-gray-500">
       使用已缓存的日线比较策略。收盘产生信号，下一交易日开盘执行；胜率仅统计已平仓交易。
     </p>
+    <StrategyStudio :symbols="symbols" />
+    <h2 class="text-base font-semibold text-gray-700">内置策略实验室</h2>
     <ElCard shadow="never">
       <ElForm label-width="130px" :disabled="busy">
         <ElFormItem label="股票（最多20只）">
@@ -196,3 +199,11 @@ function percent(value?: number): string {
     <DataDownloadCard />
   </main>
 </template>
+
+<style scoped>
+@media (max-width: 760px) {
+  .strategy-page {
+    padding: 16px 10px;
+  }
+}
+</style>

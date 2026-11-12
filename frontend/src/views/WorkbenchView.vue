@@ -34,7 +34,7 @@ const drawerVisible = ref(false)
 const autoRefresh = ref(true)
 const previewOverride = ref<{ strategy: string; params: Record<string, number> } | null>(null)
 const selected = computed(() => store.selected)
-const listCollapsed = ref(false)
+const listCollapsed = ref(window.innerWidth < 1000)
 const SIGNAL_PANEL_HEIGHT = 260
 const signalData = ref<ChartData | null>(null)
 const signalAsOf = computed(() => signalData.value?.signalAsOf ?? selected.value?.signalAsOf ?? '')
@@ -180,16 +180,16 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col">
+  <div class="workbench-page flex min-h-screen flex-col">
     <!-- 顶栏 -->
     <header
-      class="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4"
+      class="monitor-header flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white px-4 py-3"
     >
       <div class="flex items-center gap-2">
-        <span class="text-base font-bold text-gray-800">量化工作台</span>
+        <h1 class="text-base font-bold text-gray-800">行情监控</h1>
         <span class="rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-600">监控模式</span>
       </div>
-      <div class="flex items-center gap-3 text-sm text-gray-500">
+      <div class="monitor-actions flex flex-wrap items-center gap-3 text-sm text-gray-500">
         <span v-if="signalAsOf">已确认日线截至 {{ signalAsOf }}</span>
         <span v-if="previewOverride" class="text-amber-600">策略预览（未保存）</span>
         <span class="flex items-center gap-1">
@@ -205,7 +205,7 @@ onBeforeUnmount(() => {
     <div class="flex flex-1 items-stretch">
       <!-- 左侧:自选列表(可折叠,内部固定宽度防止压缩变形) -->
       <aside
-        class="shrink-0 overflow-hidden bg-white transition-[width] duration-200"
+        class="watchlist-pane shrink-0 overflow-hidden bg-white transition-[width] duration-200"
         :class="listCollapsed ? 'w-0' : 'w-64 border-r border-gray-200'"
       >
         <div class="w-64">
@@ -213,16 +213,17 @@ onBeforeUnmount(() => {
         </div>
       </aside>
       <!-- 折叠把手:常驻细长条,点击收起/展开 -->
-      <div
-        class="flex w-3.5 shrink-0 cursor-pointer items-center justify-center bg-gray-100 text-gray-400 transition-colors hover:bg-blue-100 hover:text-blue-500"
+      <button
+        class="watchlist-toggle flex w-3.5 shrink-0 cursor-pointer items-center justify-center bg-gray-100 text-gray-400 transition-colors hover:bg-blue-100 hover:text-blue-500"
         :title="listCollapsed ? '展开自选列表' : '收起自选列表'"
+        :aria-label="listCollapsed ? '展开自选列表' : '收起自选列表'"
         @click="listCollapsed = !listCollapsed"
       >
         <ElIcon :size="10">
           <ArrowRightBold v-if="listCollapsed" />
           <ArrowLeftBold v-else />
         </ElIcon>
-      </div>
+      </button>
 
       <!-- 右侧:行情 + 图表 + 信号,页面允许 Y 轴滚动 -->
       <main class="flex min-w-0 flex-1 flex-col gap-2 bg-gray-50 p-2">
@@ -230,7 +231,7 @@ onBeforeUnmount(() => {
 
         <template v-else>
           <!-- 同花顺式行情面板 -->
-          <div class="flex shrink-0 items-stretch gap-2">
+          <div class="quote-row flex shrink-0 items-stretch gap-2">
             <div class="min-w-0 flex-1">
               <QuoteHeader
                 :item="selected"
@@ -248,21 +249,23 @@ onBeforeUnmount(() => {
           <!-- 图表卡:固定充裕高度,页面可滚动 -->
           <ElCard v-loading="chartLoading" shadow="never" :body-style="{ padding: '6px 8px' }">
             <!-- 周期选项卡(同花顺式) -->
-            <div class="mb-1 flex items-center gap-1 border-b border-gray-100 px-1 pb-1">
+            <div
+              class="period-tabs mb-1 flex flex-wrap items-center gap-1 border-b border-gray-100 px-1 pb-1"
+            >
               <button
                 v-for="tab in PERIOD_TABS"
                 :key="tab.value"
                 class="rounded px-3 py-1 text-sm transition-colors"
                 :class="
                   chartTab === tab.value
-                    ? 'bg-blue-500 font-medium text-white'
+                    ? 'bg-red-50 font-semibold text-red-600'
                     : 'text-gray-500 hover:bg-gray-100'
                 "
                 @click="handleTabChange(tab.value)"
               >
                 {{ tab.label }}
               </button>
-              <span class="ml-auto text-xs text-gray-400">
+              <span class="period-caption ml-auto text-xs text-gray-400">
                 {{
                   chartTab === 'minute'
                     ? `分时交易日 ${minuteData?.date || '未知'}，3s 自动更新`
@@ -272,12 +275,13 @@ onBeforeUnmount(() => {
             </div>
 
             <!-- 图表区域:固定高度,适应视口 -->
-            <div class="h-[calc(100vh-330px)] min-h-[580px]">
+            <div class="terminal-chart-area">
               <MinuteChart v-if="chartTab === 'minute' && minuteData" :data="minuteData" />
               <ThsKLineChart
                 v-else-if="chartTab !== 'minute' && chartData"
                 :bars="chartData.bars"
                 :markers="chartData.markers"
+                :volume-unit="chartData.dataInfo?.volumeUnit"
               />
             </div>
           </ElCard>
@@ -314,3 +318,53 @@ onBeforeUnmount(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.terminal-chart-area {
+  height: clamp(480px, 68vh, 720px);
+}
+@media (max-width: 1100px) {
+  .quote-row {
+    flex-direction: column;
+  }
+}
+@media (max-width: 760px) {
+  .watchlist-pane {
+    position: fixed;
+    left: 60px;
+    top: 0;
+    bottom: 0;
+    z-index: 1000;
+    max-width: calc(100vw - 74px);
+    box-shadow: 6px 0 20px #18233712;
+  }
+  .watchlist-toggle {
+    z-index: 1001;
+  }
+  .monitor-header {
+    padding: 12px;
+  }
+  .monitor-actions {
+    font-size: 11px;
+    gap: 8px;
+  }
+  .monitor-actions > span:first-child {
+    display: none;
+  }
+  .quote-row {
+    gap: 8px;
+  }
+  .period-caption {
+    width: 100%;
+    font-size: 10px;
+    margin: 2px 0;
+  }
+  .period-tabs button {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  .terminal-chart-area {
+    height: 510px;
+  }
+}
+</style>

@@ -120,8 +120,8 @@ function compareWith(v: number | null | undefined): string {
 </script>
 
 <template>
-  <div class="rounded-lg border border-gray-200 bg-white px-4 py-3">
-    <div class="flex items-stretch gap-6">
+  <div class="quote-header rounded-lg border border-gray-200 bg-white px-4 py-3">
+    <div class="quote-layout flex items-stretch gap-6">
       <!-- 左:名称 + 大字价格 -->
       <div class="flex min-w-44 flex-col justify-center">
         <div class="flex items-baseline gap-2">
@@ -163,7 +163,7 @@ function compareWith(v: number | null | undefined): string {
 
       <!-- 右:行情字段网格 -->
       <div
-        class="grid flex-1 grid-cols-4 content-center gap-x-6 gap-y-1.5 border-l border-gray-100 pl-6 text-sm"
+        class="quote-fields grid flex-1 grid-cols-4 content-center gap-x-6 gap-y-1.5 border-l border-gray-100 pl-6 text-sm"
       >
         <div v-for="f in fields" :key="f.label" class="flex justify-between">
           <span class="text-gray-400">{{ f.label }}</span>
@@ -173,3 +173,36 @@ function compareWith(v: number | null | undefined): string {
     </div>
   </div>
 </template>
+
+<style scoped>
+.quote-fields > div {
+  gap: 10px;
+  min-width: 0;
+  white-space: nowrap;
+}
+@media (max-width: 1250px) {
+  .quote-layout {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .quote-fields {
+    border-left: 0;
+    padding-left: 0;
+    column-gap: 16px;
+    font-size: 12px;
+  }
+}
+@media (max-width: 760px) {
+  .quote-header {
+    padding: 12px;
+  }
+  .quote-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    font-size: 11px;
+    gap: 7px 14px;
+  }
+  .quote-layout {
+    gap: 14px;
+  }
+}
+</style>

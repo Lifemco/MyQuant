@@ -8,10 +8,16 @@ const props = defineProps<{ equityCurve: EquityPoint[] }>()
 
 const chartEl = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
+let observer: ResizeObserver | null = null
 
 function render(): void {
-  if (!chart || props.equityCurve.length === 0) return
+  if (!chart) return
+  if (props.equityCurve.length === 0) {
+    chart.clear()
+    return
+  }
   chart.setOption({
+    animation: false,
     tooltip: { trigger: 'axis' },
     grid: { left: 60, right: 20, top: 30, bottom: 60 },
     xAxis: { type: 'category', data: props.equityCurve.map((p) => p.date) },
@@ -22,7 +28,7 @@ function render(): void {
         type: 'line',
         name: '净值',
         data: props.equityCurve.map((p) => p.equity),
-        showSymbol: false,
+        showSymbol: props.equityCurve.length < 3,
         lineStyle: { width: 2, color: '#409eff' },
         areaStyle: { opacity: 0.08 },
       },
@@ -33,6 +39,8 @@ function render(): void {
 onMounted(() => {
   if (chartEl.value) {
     chart = echarts.init(chartEl.value)
+    observer = new ResizeObserver(() => chart?.resize())
+    observer.observe(chartEl.value)
     render()
   }
 })
@@ -40,11 +48,12 @@ onMounted(() => {
 watch(() => props.equityCurve, render, { deep: true })
 
 onBeforeUnmount(() => {
+  observer?.disconnect()
   chart?.dispose()
   chart = null
 })
 </script>
 
 <template>
-  <div ref="chartEl" class="h-80 w-full" />
+  <div ref="chartEl" class="h-80 w-full" role="img" aria-label="策略净值曲线" />
 </template>

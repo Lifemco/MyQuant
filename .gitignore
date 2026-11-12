@@ -19,3 +19,4 @@ data/watchlist.json
 data/**/*.lock
 data/**/*.bak
 data/market/
+data/strategies/

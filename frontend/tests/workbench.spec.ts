@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-async function mockWorkbench(page: Page, count = 2) {
+async function mockWorkbench(page: Page, count = 2, fullHistory = false) {
   const codes =
     count === 2
       ? ['600519', '000001']
@@ -33,6 +33,11 @@ async function mockWorkbench(page: Page, count = 2) {
   }
   await page.route('http://127.0.0.1:4173/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname.slice('/api/'.length)
+    if (path === 'strategies/capabilities')
+      return route.fulfill({
+        json: { configured: false, model: null, factors: [], execution: '独立回测' },
+      })
+    if (path === 'strategies/library') return route.fulfill({ json: [] })
     if (path === 'monitor/overview') return route.fulfill({ json: items })
     if (path === 'monitor/quotes') {
       state.quoteRequests.push(route.request().postDataJSON().items.length)
@@ -150,7 +155,7 @@ async function mockWorkbench(page: Page, count = 2) {
           dataInfo: state.legacyMetadata
             ? null
             : {
-                source: 'tencent',
+                source: fullHistory ? '合成验证数据' : 'tencent',
                 market: 'cn',
                 symbol: req.symbol,
                 period: req.period,
@@ -165,16 +170,32 @@ async function mockWorkbench(page: Page, count = 2) {
                 observedAt: '2026-09-30T10:00:00+08:00',
                 confirmedThrough: '2026-09-29',
               },
-          bars: [
-            {
-              date: marker.date,
-              open: close,
-              high: close + 1,
-              low: close - 1,
-              close,
-              volume: 1000,
-            },
-          ],
+          bars: fullHistory
+            ? Array.from({ length: 180 }, (_, i) => {
+                const value =
+                  i === 179 ? close : close * (0.65 + (0.35 * i) / 179 + Math.sin(i * 0.29) * 0.025)
+                const open = value * (1 + Math.sin(i * 0.71) * 0.015)
+                return {
+                  date: new Date(Date.UTC(2026, 8, 29) - (179 - i) * 86400000)
+                    .toISOString()
+                    .slice(0, 10),
+                  open,
+                  close: value,
+                  high: Math.max(open, value) * 1.012,
+                  low: Math.min(open, value) * 0.988,
+                  volume: (1.3 + Math.sin(i * 0.18)) * 1e6,
+                }
+              })
+            : [
+                {
+                  date: marker.date,
+                  open: close,
+                  high: close + 1,
+                  low: close - 1,
+                  close,
+                  volume: 1000,
+                },
+              ],
           markers: [marker],
           lastSignal: marker,
           holding: true,
@@ -198,6 +219,78 @@ test('slow old stock response cannot replace the selected chart', async ({ page 
   await page.waitForTimeout(650)
   await expect(page.getByRole('img', { name: 'K线图，最新收盘价 200', exact: true })).toBeVisible()
   await expect(page.getByRole('img', { name: 'K线图，最新收盘价 100', exact: true })).toHaveCount(0)
+})
+
+test('K-line terminal switches indicators zooms inspects and expands', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await mockWorkbench(page, 2, true)
+  await expect(page.getByTestId('candle-count')).toContainText('70 / 180')
+  await page.getByRole('button', { name: '放大K线', exact: true }).click()
+  await expect(page.getByTestId('candle-count')).not.toContainText('70 / 180')
+  await page.getByRole('button', { name: '复位到最近行情' }).click()
+  await expect(page.getByTestId('candle-count')).toContainText('70 / 180')
+  await page.getByRole('button', { name: 'KDJ', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'KDJ', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await page.getByRole('button', { name: '仅成交量', exact: true }).click()
+  await page.getByRole('button', { name: 'MACD', exact: true }).click()
+  const canvas = page.getByRole('img', { name: 'K线图，最新收盘价 100', exact: true })
+  await canvas.focus()
+  await canvas.press('ArrowLeft')
+  await expect(page.locator('.candle-readout')).toContainText('2026-09-28')
+  await page.getByRole('button', { name: '展开图表', exact: true }).click()
+  await expect(page.getByTestId('kline-terminal')).toHaveClass(/fullscreen/)
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('kline-terminal')).not.toHaveClass(/fullscreen/)
+  await page.getByRole('button', { name: '复位到最近行情' }).click()
+  const nav = await page.getByLabel('工作台侧栏').boundingBox()
+  expect(nav?.x).toBe(0)
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await page.screenshot({ path: test.info().outputPath('kline-desktop.png'), fullPage: true })
+  expect(errors).toEqual([])
+})
+
+test('mobile chart supports long press and sidebar stays at the left', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await mockWorkbench(page, 2, true)
+  const chart = page.getByRole('img', { name: 'K线图，最新收盘价 100', exact: true })
+  await expect(page.locator('.el-loading-mask')).toHaveCount(0)
+  await chart.scrollIntoViewIfNeeded()
+  const box = (await chart.boundingBox())!
+  const session = await context.newCDPSession(page)
+  await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 2 })
+  await session.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ x: box.x + box.width * 0.5, y: box.y + box.height * 0.3 }],
+  })
+  await expect(page.getByRole('button', { name: '十字线模式' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+    { timeout: 2000 },
+  )
+  await session.send('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [{ x: box.x + box.width * 0.6, y: box.y + box.height * 0.3 }],
+  })
+  await expect(page.locator('.candle-readout')).not.toContainText('2026-09-29')
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await expect(page.getByRole('button', { name: '十字线模式' })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  const nav = (await page.getByLabel('工作台侧栏').boundingBox())!
+  expect(nav.x).toBe(0)
+  expect(nav.width).toBe(60)
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await page.screenshot({ path: test.info().outputPath('kline-mobile.png'), fullPage: true })
 })
 
 test('preview updates confirmed panel and closing restores saved parameters', async ({ page }) => {
@@ -247,7 +340,10 @@ test('strategy center submits batch and optimization requests', async ({ page })
   const state = await mockWorkbench(page)
   await page.getByRole('menuitem', { name: '策略中心' }).click()
   await page.locator('.el-select').first().click()
-  await page.getByRole('option', { name: /CN 600519/ }).click()
+  await page
+    .locator('.el-select-dropdown')
+    .getByRole('option', { name: /CN 600519/ })
+    .click()
   await page.getByRole('heading', { name: '策略中心' }).click()
   await page.getByRole('button', { name: '批量回测', exact: true }).click()
   await expect.poll(() => state.batchSizes).toEqual([1])

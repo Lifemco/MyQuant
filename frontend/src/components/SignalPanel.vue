@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ElTable, ElTableColumn, ElTag } from 'element-plus'
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 
 import type { SignalMarker } from '@/types'
 
@@ -18,7 +18,14 @@ const props = defineProps<{
 const history = computed(() => [...props.markers].reverse())
 
 /** 表格高度 = 面板高度 - 卡片边框与内边距 */
-const tableHeight = computed(() => Math.max(60, (props.height ?? 150) - 20))
+const media = window.matchMedia('(max-width: 760px)')
+const compact = ref(media.matches)
+function resizePanel(): void {
+  compact.value = media.matches
+}
+media.addEventListener('change', resizePanel)
+onBeforeUnmount(() => media.removeEventListener('change', resizePanel))
+const tableHeight = computed(() => Math.max(60, (props.height ?? 150) - (compact.value ? 110 : 20)))
 
 /** 表格行辅助:ElTable 插槽行类型宽松,断言收敛在 script 内 */
 function tagType(row: unknown): 'danger' | 'success' {
@@ -41,9 +48,9 @@ function fmtPrice(row: unknown): string {
 
 <template>
   <!-- 高度跟随面板:状态卡拉伸,历史表高度自适应 -->
-  <div class="flex h-full items-stretch gap-3">
+  <div class="signal-layout flex h-full items-stretch gap-3">
     <div
-      class="flex h-full w-56 shrink-0 items-center justify-between rounded border px-3"
+      class="signal-state flex h-full w-56 shrink-0 items-center justify-between rounded border px-3"
       :class="holding ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'"
     >
       <div>
@@ -79,3 +86,24 @@ function fmtPrice(row: unknown): string {
     </div>
   </div>
 </template>
+
+<style scoped>
+@media (max-width: 760px) {
+  .signal-layout {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .signal-state {
+    width: 100%;
+    height: 72px;
+    box-sizing: border-box;
+  }
+  .signal-state > div:first-child {
+    min-width: 0;
+    padding-right: 10px;
+  }
+  .signal-state :deep(.text-xl) {
+    font-size: 17px;
+  }
+}
+</style>

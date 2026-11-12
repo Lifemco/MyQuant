@@ -32,3 +32,18 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.33.0
+      - run: |
+          kubectl kustomize deploy/k8s > /tmp/myquant-manifests.yaml
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz -o /tmp/kubeconform.tar.gz
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          /tmp/kubeconform -strict -summary -kubernetes-version 1.33.0 /tmp/myquant-manifests.yaml
+      - run: docker build -f backend/Dockerfile -t myquant-backend:verify .
+      - run: docker build -f frontend/Dockerfile -t myquant-frontend:verify .
+      - run: python3 scripts/verify_containers.py
